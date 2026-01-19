@@ -61,15 +61,26 @@ Do note that models and data folder will only appear after you run the **get_dat
 
 ## Deployment Guide
 
-### before starting
-If you run into any **permission denied** scenario,like models and data folder try:
-    ```
-    sudo chmod -R 777 models data
-    ```
-or
-    ```
-    sudo chown -R $USER:$USER models data
-    ```
+### Before Starting: Permissions & Hardware
+
+#### File Permissions
+If you run into any **Permission Denied** errors when the containers try to write to the `models/` or `data/` folders, run:
+```bash
+# Grant write access to the shared volumes
+sudo chown -R $USER:$USER models data
+# OR (for rapid local testing)
+sudo chmod -R 777 models data
+```
+
+#### Hardware Requirements
+**Dataset Size**: This project utilizes the full Kitsune Network Attack dataset, which is significantly larger than standard Kaggle samples (~GBs of raw CSV data). Ensure you have at least 10GB of free disk space.
+
+**GPU Acceleration**: The **train.py** script utilizes Polars with GPU support.    
+ - **Linux/Windows (WSL2)**: Requires an NVIDIA GPU with CUDA 12+ for acceleration.
+ - **macOS**: Since CUDA is not supported on macOS, Polars will automatically fall back to the CPU engine. Expect longer training times (5-10 minutes) on Mac hardware.
+
+---
+
 ### get the data and start the training
 Below is the step to test the train scripts and the model served.   
 You can skip to the build and run section if you wanna cold start everything.   
@@ -104,6 +115,10 @@ Because the **data downloading** and **model training** take times, this process
 2.  test the result **(remember to stop the script form above,they share the same port)**
     ```
     python ./scripts/client_test.py
+    ```
+3. after you finish, use this to clean up those images, volumns and containers:
+    ```
+    docker-compose down -v --rmi all
     ```
 
 ### Cloud Deployment
