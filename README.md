@@ -73,7 +73,7 @@ sudo chmod -R 777 models data
 ```
 
 #### Hardware Requirements
-**Dataset Size**: This project utilizes the full Kitsune Network Attack dataset, which is significantly larger than standard Kaggle samples (~GBs of raw CSV data). Ensure you have at least 10GB of free disk space.
+**Dataset Size**: This project utilizes the Kitsune Network Attack datasets(Mirai & OS_SCAN), which is significantly larger than standard Kaggle samples (~GBs of raw CSV data). Ensure you have at least 10GB of free disk space.
 
 **GPU Acceleration**: The **train.py** script utilizes Polars with GPU support.    
  - **Linux/Windows (WSL2)**: Requires an NVIDIA GPU with CUDA 12+ for acceleration.
