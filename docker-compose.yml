@@ -1,0 +1,27 @@
+services:
+  trainer:
+    build: .
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+    command: >
+      sh -e -c "
+      chmod +x ./get_data.sh && 
+      chmod -R 777 /app/data /app/models && 
+      ./get_data.sh && 
+      python scripts/trainer/train.py"
+
+  server:
+    build: .
+    ports:
+      - "8000:8000"
+    restart: always
+    volumes:
+      - ./models:/app/models
+      - ./scripts:/app/scripts
+    environment:
+      - PYTHONPATH=/app/scripts/svm
+    command: python scripts/svm/serve.py
+    depends_on:
+      trainer:
+        condition: service_completed_successfully
