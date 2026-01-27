@@ -1,6 +1,8 @@
 import os
 import gc
 import json
+import hashlib
+import sys
 
 import pandas as pd
 import numpy as np
@@ -30,6 +32,22 @@ IS_ATTACK_THRESHOLD = 0.5
 
 MODEL_DIR = "models"
 os.makedirs(MODEL_DIR, exist_ok=True)
+
+def get_script_hash():
+    with open(__file__, "rb") as f:
+        return hashlib.md5(f.read()).hexdigest()
+
+CURRENT_HASH = get_script_hash()
+MODEL_PATH = os.path.join(MODEL_DIR, "svm_bot_filter.onnx")
+CONFIG_PATH = os.path.join(MODEL_DIR, "preprocessor_config.json")
+
+if os.path.exists(CONFIG_PATH) and os.path.exists(MODEL_PATH):
+    with open(CONFIG_PATH, "r") as f:
+        saved_config = json.load(f)
+        if saved_config.get("hash") == CURRENT_HASH:
+            print(">>> Training script and model are up to date. Skipping...")
+            sys.exit(0)
+    
 # dataset loading & attach label & merge
 def get_lazy_frame(file_path):
     return pl.scan_csv(file_path, has_header=False)
@@ -286,8 +304,6 @@ onx = to_onnx(clf, initial_types=initial_type, target_opset=14)
 with open(os.path.join(MODEL_DIR, "svm_bot_filter.onnx"), "wb") as f:
     f.write(onx.SerializeToString())
 
-print(f"Model saved at {os.path.join(MODEL_DIR, "svm_bot_filter.onnx")}")
-
 feature_constants = {}
 
 for col in clean_features:
@@ -300,8 +316,11 @@ for col in clean_features:
         "iqr": float(iqr)
     }
 
-with open(os.path.join(MODEL_DIR, "preprocessor_config.json"), "w") as f:
+with open(CONFIG_PATH, "w") as f:
     json.dump({
+        "hash": CURRENT_HASH,           # The key to the 'Smart Skip'
         "feature_names": clean_features,
         "constants": feature_constants
-    }, f)
+    }, f, indent=4)
+    
+print(f">>> [SUCCESS] Model and Config version {CURRENT_HASH[:8]} saved to {MODEL_DIR}")

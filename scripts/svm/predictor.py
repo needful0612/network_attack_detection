@@ -32,8 +32,11 @@ class BotFilterPredictor:
         for new_col, (fast, slow) in ratio_pairs.items():
             f_val = processed.get(fast, 0)
             s_val = processed.get(slow, 0)
-            # log1p is np.log(1 + x)
-            processed[new_col] = np.log1p(f_val) - np.log1p(s_val)
+            # OLD LOGIC: log1p is np.log(1 + x)
+            # processed[new_col] = np.log1p(f_val) - np.log1p(s_val)
+            
+            # prevent overflow cause NaN
+            processed[new_col] = np.log1p(max(0, f_val)) - np.log1p(max(0, s_val))
 
         final_vector = []
         for col in self.feature_names:
@@ -41,15 +44,29 @@ class BotFilterPredictor:
             
             if col.startswith("column_"):
                 val = np.sign(val) * np.log1p(np.abs(val))
+                
+            # OLD LOGIC
+            # stats = self.constants[col]
+            # val = (val - stats["median"]) / stats["iqr"]
             
+            # Safety: If IQR is tiny or zero, don't divide by it
             stats = self.constants[col]
-            val = (val - stats["median"]) / stats["iqr"]
+            m = stats["median"]
+            iqr = stats["iqr"]
+            
+            if iqr < 1e-9:
+                val = val - m 
+            else:
+                val = (val - m) / iqr
             
             val = np.clip(val, -10, 10)
             
             final_vector.append(val)
 
-        return np.array([final_vector], dtype=np.float32)
+        # return np.array([final_vector], dtype=np.float32)
+        
+        arr = np.array([final_vector], dtype=np.float32)
+        return np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
 
     def predict(self, raw_data):
         X = self.preprocess(raw_data)
@@ -63,7 +80,7 @@ class BotFilterPredictor:
         
         return {
             "is_attack": bool(label),
-            "attack_probability": float(prob_attack),
+            "probability": float(prob_attack),
             "uncertain": 0.2 < prob_attack < 0.8
         }
 

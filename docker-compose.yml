@@ -7,21 +7,36 @@ services:
     command: >
       sh -e -c "
       chmod +x ./get_data.sh && 
-      chmod -R 777 /app/data /app/models && 
       ./get_data.sh && 
       python scripts/trainer/train.py"
 
-  server:
+  svm-service:
     build: .
     ports:
-      - "8000:8000"
+      - "4000:4000"
     restart: always
     volumes:
       - ./models:/app/models
       - ./scripts:/app/scripts
     environment:
       - PYTHONPATH=/app/scripts/svm
-    command: python scripts/svm/serve.py
+    command: uvicorn scripts.svm.serve:app --host 0.0.0.0 --port 4000 --reload
     depends_on:
       trainer:
         condition: service_completed_successfully
+
+  sniffer:
+    build: .
+    network_mode: "host" 
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ./scripts:/app/scripts
+    # the sniffer is mounted on host,it can only see the port outside(which is localhost here)
+    environment:
+      - INFERENCE_URL=http://localhost:4000/predict
+    command: python -m scripts.sniffer.sniffer
+    depends_on:
+      svm-service:
+        condition: service_started
