@@ -295,6 +295,14 @@ def calculate_metrics(name, probs, y):
 base = LinearSVC(C=1.0, dual=False, max_iter=5000, random_state=RANDOM_SEED)
 clf = CalibratedClassifierCV(base, cv=5, method='sigmoid') 
 clf.fit(X_train, y_train)
+
+ensemble_weights = []
+for calibrated_model in clf.calibrated_classifiers_:
+    svc_model = calibrated_model.estimator 
+    ensemble_weights.append(svc_model.coef_[0])
+
+avg_weights = np.mean(ensemble_weights, axis=0).tolist()
+
 probs = clf.predict_proba(X_val)[:, 1]
 metrics = calculate_metrics(f"SVM (C={1.0})", probs, y_val)
 print(metrics)
@@ -320,7 +328,8 @@ with open(CONFIG_PATH, "w") as f:
     json.dump({
         "hash": CURRENT_HASH,           # The key to the 'Smart Skip'
         "feature_names": clean_features,
-        "constants": feature_constants
+        "constants": feature_constants,
+        "svm_weights": avg_weights
     }, f, indent=4)
     
 print(f">>> [SUCCESS] Model and Config version {CURRENT_HASH[:8]} saved to {MODEL_DIR}")

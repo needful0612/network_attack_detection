@@ -1,4 +1,24 @@
 services:
+  # traffic_gen section -------------------------------------------
+  baseline-gen:
+    build: 
+      context: .
+      dockerfile: Dockerfile.baseline
+    network_mode: "host"
+    privileged: true
+    volumes:
+      - ./data:/app/data
+  # traffic_gen section -------------------------------------------
+
+  broker:
+    image: redis:alpine
+    # force not snapshot
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    networks:
+      - nids-internal
+    ports:
+      - "6379:6379"
+      
   trainer:
     build: .
     volumes:
@@ -10,33 +30,49 @@ services:
       ./get_data.sh && 
       python scripts/trainer/train.py"
 
+  # this might need sampling algorithm to sniff packages or horizontal scales?
+  sniffer:
+    build: .
+    networks:
+      - nids-internal
+    cap_add:
+      - NET_ADMIN  # Required to run 'ip link set'
+      - NET_RAW    # Required for Scapy to sniff
+    volumes:
+      - ./scripts:/app/scripts
+    environment:
+      - PYTHONUNBUFFERED=1 # stop python from buffering output
+      - PYTHONPATH=/app
+    entrypoint: /bin/sh -c "ip link set eth0 promisc on && python -m scripts.sniffer.sniffer"
+    depends_on:
+      svm-service:
+        condition: service_started
+      broker:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+
   svm-service:
     build: .
-    ports:
-      - "4000:4000"
+    networks:
+      - nids-internal
     restart: always
     volumes:
       - ./models:/app/models
       - ./scripts:/app/scripts
     environment:
-      - PYTHONPATH=/app/scripts/svm
-    command: uvicorn scripts.svm.serve:app --host 0.0.0.0 --port 4000 --reload
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    command: python scripts/svm/worker.py
     depends_on:
       trainer:
         condition: service_completed_successfully
-
-  sniffer:
-    build: .
-    network_mode: "host" 
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    volumes:
-      - ./scripts:/app/scripts
-    # the sniffer is mounted on host,it can only see the port outside(which is localhost here)
-    environment:
-      - INFERENCE_URL=http://localhost:4000/predict
-    command: python -m scripts.sniffer.sniffer
-    depends_on:
-      svm-service:
+      broker:
         condition: service_started
+
+networks:
+  nids-internal:
+    driver: bridge

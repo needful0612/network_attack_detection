@@ -1,11 +1,11 @@
-import os
+import redis
+import json
 from scapy.all import sniff
 from scapy.layers.inet import IP, TCP, UDP
 from scapy.layers.l2 import ARP
 from scapy.layers.inet import ICMP
 from scripts.sniffer.netStat import netStat
 import numpy as np
-import requests
 import traceback
 
 # C0 maintains the STATE (netStat)
@@ -13,10 +13,12 @@ MAX_HOST = 100000000000
 MAX_SESS = 100000000000
 # use default(please see in netstat)
 NSTAT = netStat(np.nan, MAX_HOST, MAX_SESS)
-INFERENCE_URL = os.environ.get("INFERENCE_URL", "http://svm-service:8000/predict")
+
+R = redis.Redis(host='broker', port=6379)
+R_Q = "triage_queue"
 
 def process_and_push(pkt):
-    # 1. Manually parse the pkt fields (similar to FE.get_next_vector logic)
+    # Manually parse the pkt fields (similar to FE.get_next_vector logic)
     # This replaces the need for the FE class to read a file
     try:
         # Extract metadata (timestamp, length, IPs, Ports)
@@ -79,26 +81,24 @@ def process_and_push(pkt):
         )
         
         if vector is not None:
-            # 1. Create the inner dictionary
             inner_dict = {f"column_{i+1}": float(v) for i, v in enumerate(vector)}
             
-            # 2. Wrap it in the "features" key required by your Pydantic model
-            payload = {"features": inner_dict}
+            payload = {
+                "src_ip": sIP,
+                "features": inner_dict
+            }
             
-            # 3. Send the payload
-            resp = requests.post(INFERENCE_URL, json=payload, timeout=0.1)
-            if resp.status_code == 200:
-                res = resp.json()
-                if res.get("is_attack"):
-                    print(f"!!! ATTACK DETECTED !!! Prob: {res['attack_probability']:.4f}")
-            else:
-                # This will now help you see if there are still validation errors
-                print(f"Server returned {resp.status_code}: {resp.text}")
+            R.lpush(R_Q, json.dumps(payload))
+            
     except Exception as e:
         print(f"--- Error Caught ---")
-        traceback.print_exc()  # This will show the file, line number, and full path
-        print(f"Variables at crash: IPtype={IPtype}, sIP={sIP}, sProto={sProto}, len={framelen}")
+        traceback.print_exc()
 
-print(f"Starting Sniffer. Targeting {INFERENCE_URL}...")
-# Note: 'filter' excludes the traffic between the sniffer and the server to avoid a loop
-sniff(iface="eth0", filter="not port 4000 and (tcp or udp)", prn=process_and_push, store=0)
+print(F"Starting Sniffer. Pushing to Redis {R_Q}...")
+# ignore internal ports
+sniff(
+    iface="eth0", 
+    filter="(tcp or udp) and not port 6379 and not port 8000", 
+    prn=process_and_push, 
+    store=0
+)

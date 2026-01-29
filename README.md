@@ -159,18 +159,23 @@ The later stage of the waterfall utilizes the **KitNET** algorithm to catch pote
 2.  **Ensemble Layer**: A collection of "micro" autoencoders trained on normal traffic. Each calculates a **Root Mean Square Error (RMSE)**.
 3.  **Output Layer**: A final autoencoder summarizes the RMSEs into an overall anomaly score.
 
-## Personal Reflections & Project Status
+### Current State & Working plan
+---
 
-This project was a deep dive into the "trench work" of Machine Learning—where the math meets the messy reality of network packets. While I started with high-reaching architectural goals, the reality of setting up a tiered multi-container system proved to be a significant (but rewarding) challenge.
+ 1. Local Infrastructure & Pipeline (**In Progress**)   
+    [x] Core Extraction Engines: Successfully integrated netStat, AfterImage, and FeatureExtractor from the Kitsune framework.
 
-### What I Learned
-* **Simple is often better**: I spent a lot of time trying to make XGBoost and LGBM work, only to realize they were overfitting or failing on basic Benign traffic. Moving to a calibrated LinearSVC was a "lightbulb moment"—it reminded me that model complexity shouldn't come before understanding your feature distributions.
-* **Preprocessing is the real MVP**: Building the "Precision-Safe" pipeline (Symmetric Log + Robust Scaling) taught me more about production ML than the actual training did. Ensuring that my local Python environment and the Docker ONNX runtime handled math the exact same way was a massive lesson in consistency.
-* **The "Waterfall" is hard**: Orchestrating the hand-off between C0 (Sensor), C1 (SVM), and C2 (KitNET) was the most difficult part. Dealing with container synchronization and shared volumes was a steep learning curve that shifted my focus from just "writing code" to "system design."
+    [x] Tier 1 Classifier: Deployed Calibrated LinearSVC with Platt scaling for fast triage.
 
-### Current State & What’s Next
-The project has officially wrapped up **Phase 1**. 
+    [x] Environment Setup: Configured Wireshark/Tshark integration within Docker for real-time packet processing.
 
-I’ve successfully built and containerized the core SVM filter and the data pipeline. While I didn't get the full KitNET "Grey Zone" hand-off working perfectly across all containers before my personal deadline, I’m really proud of the Tier 1 stability. 
+    [ ] Tier 2 Engine (KitNET) [IN PROGRESS]: - Integrating the Autoencoder Ensemble logic for deep anomaly detection.
 
- I’m leaving the architecture ready for a "Phase 2" update. It was a blast messing with the math, and even though it's not the "final-final" vision yet, it’s a functional proof-of-concept that I’m happy to stand behind.
+     - Current Blocker: Designing a robust collection script to capture 50k clean background traffic samples required for KitNET's initial normalization/unsupervised training.
+
+    [x] Traffic Simulation: Preparing tcpreplay scripts to stream Mirai botnet PCAPs against the docker0 bridge for end-to-end waterfall validation.
+
+2. Distributed Architecture (Planned)
+    Pipeline: Sniffer (Tshark) → Redis (LPUSH) → Inference (SVM/KitNET) → Alerting (Redis Streams).
+
+    Automated Mitigation: Feedback loop via Redis SADD to trigger firewall updates (iptables/nftables).
