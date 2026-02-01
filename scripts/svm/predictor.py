@@ -11,7 +11,7 @@ class BotFilterPredictor:
         self.feature_names = self.config["feature_names"]
         self.constants = self.config["constants"]
         self.feature_weights = np.array(self.config.get("svm_weights", []))
-        
+        # add memory mapping to prevent model idle in memory
         self.sess = rt.InferenceSession(model_path)
         self.input_name = self.sess.get_inputs()[0].name
 
@@ -32,8 +32,6 @@ class BotFilterPredictor:
         for new_col, (fast, slow) in ratio_pairs.items():
             f_val = processed.get(fast, 0)
             s_val = processed.get(slow, 0)
-            # OLD LOGIC: log1p is np.log(1 + x)
-            # processed[new_col] = np.log1p(f_val) - np.log1p(s_val)
             
             # prevent overflow cause NaN
             processed[new_col] = np.log1p(max(0, f_val)) - np.log1p(max(0, s_val))
@@ -44,10 +42,6 @@ class BotFilterPredictor:
             
             if col.startswith("column_"):
                 val = np.sign(val) * np.log1p(np.abs(val))
-                
-            # OLD LOGIC
-            # stats = self.constants[col]
-            # val = (val - stats["median"]) / stats["iqr"]
             
             # Safety: If IQR is tiny or zero, don't divide by it
             stats = self.constants[col]
@@ -62,19 +56,12 @@ class BotFilterPredictor:
             val = np.clip(val, -10, 10)
             
             final_vector.append(val)
-
-        # return np.array([final_vector], dtype=np.float32)
         
         arr = np.array([final_vector], dtype=np.float32)
         return np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
     
     def explain_prediction(self, X_processed):
-        # Calculate the 'contribution' of each feature (Weight * Value)
-        # X_processed is usually shape (1, 115)
         impacts = self.feature_weights * X_processed[0]
-        
-        # Argmax of Absolute value finds the feature that moved the 
-        # needle the most, regardless of direction.
         top_idx = np.argmax(np.abs(impacts))
         
         return {
@@ -99,12 +86,3 @@ class BotFilterPredictor:
             "uncertain": 0.2 < prob_attack < 0.8,
             "explanation": explanation
         }
-
-# dry run test
-if __name__ == "__main__":
-    predictor = BotFilterPredictor()
-    
-    sample_packet = {f"column_{i}": 1.5 for i in range(1, 116)}
-    
-    result = predictor.predict(sample_packet)
-    print(f"Result: {result}")

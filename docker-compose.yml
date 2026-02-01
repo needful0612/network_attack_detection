@@ -1,14 +1,4 @@
 services:
-  # traffic_gen section -------------------------------------------
-  baseline-gen:
-    build: 
-      context: .
-      dockerfile: Dockerfile.baseline
-    network_mode: "host"
-    privileged: true
-    volumes:
-      - ./data:/app/data
-  # traffic_gen section -------------------------------------------
 
   broker:
     image: redis:alpine
@@ -24,11 +14,17 @@ services:
     volumes:
       - ./models:/app/models
       - ./data:/app/data
+      - .:/app
+    environment:
+      - PYTHONUNBUFFERED=1 # stop python from buffering output
+      - PYTHONPATH=/app:/app/scripts/kitnet
     command: >
-      sh -e -c "
-      chmod +x ./get_data.sh && 
-      ./get_data.sh && 
-      python scripts/trainer/train.py"
+      /bin/bash -c "
+      chmod +x ./get_data.sh &&
+      ./get_data.sh &&
+      echo '>>> Starting SVM Training...' &&
+      python -m scripts.trainer.train
+      "
 
   # this might need sampling algorithm to sniff packages or horizontal scales?
   sniffer:
@@ -49,11 +45,11 @@ services:
         condition: service_started
       broker:
         condition: service_started
-    deploy:
-      resources:
-        limits:
-          cpus: '0.50'
-          memory: 512M
+    # deploy:
+      # resources:
+        # limits:
+        #   cpus: '0.50'
+        #   memory: 512M
 
   svm-service:
     build: .

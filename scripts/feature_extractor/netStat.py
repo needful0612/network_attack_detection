@@ -4,7 +4,7 @@ import os
 import subprocess
 import pyximport
 pyximport.install()
-import scripts.sniffer.AfterImage as af
+import scripts.feature_extractor.AfterImage as af
 #import AfterImage_NDSS as af
 
 #
