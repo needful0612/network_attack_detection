@@ -14,14 +14,11 @@ services:
     volumes:
       - ./models:/app/models
       - ./data:/app/data
-      - .:/app
-    environment:
-      - PYTHONUNBUFFERED=1 # stop python from buffering output
-      - PYTHONPATH=/app:/app/scripts/kitnet
+      - ./scripts:/app/scripts
     command: >
-      /bin/bash -c "
-      chmod +x ./get_data.sh &&
-      ./get_data.sh &&
+      sh -e -c "
+      chmod +x ./get_data.sh && 
+      ./get_data.sh && 
       echo '>>> Starting SVM Training...' &&
       python -m scripts.trainer.train
       "
@@ -45,11 +42,11 @@ services:
         condition: service_started
       broker:
         condition: service_started
-    # deploy:
-      # resources:
-        # limits:
-        #   cpus: '0.50'
-        #   memory: 512M
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
 
   svm-service:
     build: .
