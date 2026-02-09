@@ -164,13 +164,20 @@ The later stage of the waterfall utilizes the **KitNET** algorithm to catch pote
 This project was a deep dive into the "trench work" of Machine Learning—where the math meets the messy reality of network packets. While I started with high-reaching architectural goals, the reality of setting up a tiered multi-container system proved to be a significant (but rewarding) challenge.
 
 ### What I Learned
+---
 * **Simple is often better**: I spent a lot of time trying to make XGBoost and LGBM work, only to realize they were overfitting or failing on basic Benign traffic. Moving to a calibrated LinearSVC was a "lightbulb moment"—it reminded me that model complexity shouldn't come before understanding your feature distributions.
 * **Preprocessing is the real MVP**: Building the "Precision-Safe" pipeline (Symmetric Log + Robust Scaling) taught me more about production ML than the actual training did. Ensuring that my local Python environment and the Docker ONNX runtime handled math the exact same way was a massive lesson in consistency.
 * **The "Waterfall" is hard**: Orchestrating the hand-off between C0 (Sensor), C1 (SVM), and C2 (KitNET) was the most difficult part. Dealing with container synchronization and shared volumes was a steep learning curve that shifted my focus from just "writing code" to "system design."
 
-### Current State & What’s Next
-The project has officially wrapped up **Phase 1**. 
+### Current State & Architecture
+---
+**Asynchronous Processing (Redis Broker)**: Decouples high-speed packet ingestion from heavy inference routines. This backpressure management prevents packet loss and buffer overflows during CPU-intensive classification tasks.
 
-I’ve successfully built and containerized the core SVM filter and the data pipeline. While I didn't get the full KitNET "Grey Zone" hand-off working perfectly across all containers before my personal deadline, I’m really proud of the Tier 1 stability. 
+**KitNET Initialization & Baselines**: * Cold Start Strategy: The trainer service ingests a 55,000-packet "Benign" stream to calibrate the baseline profile before activation.
 
- I’m leaving the architecture ready for a "Phase 2" update. It was a blast messing with the math, and even though it's not the "final-final" vision yet, it’s a functional proof-of-concept that I’m happy to stand behind.
+**Model Persistence & Orchestration**: Leverages a shared /models volume to ensure deterministic state synchronization between the training service (SVM weights/KitNET state) and the live inference server.
+### Roadmap (Next Steps)
+---
+**Topology Completion**: Finalize the "Waterfall" flow orchestration, ensuring seamless hand-offs between C1 (Deterministic filtering) and C2 (Anomaly detection).
+
+**Liveness & Auto-Recovery**: Implement Kubernetes liveness probes to monitor the Redis-Inference pipeline and enable self-healing for stalled inference workers.
