@@ -178,6 +178,8 @@ This project was a deep dive into the "trench work" of Machine Learning—where 
 **Model Persistence & Orchestration**: Leverages a shared /models volume to ensure deterministic state synchronization between the training service (SVM weights/KitNET state) and the live inference server.
 ### Roadmap (Next Steps)
 ---
-**Topology Completion**: Finalize the "Waterfall" flow orchestration, ensuring seamless hand-offs between C1 (Deterministic filtering) and C2 (Anomaly detection).
-
 **Liveness & Auto-Recovery**: Implement Kubernetes liveness probes to monitor the Redis-Inference pipeline and enable self-healing for stalled inference workers.
+
+**cloud deployment**
+
+**Dynamic Confidence Weighting**

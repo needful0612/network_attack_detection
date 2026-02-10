@@ -66,6 +66,24 @@ services:
       broker:
         condition: service_started
 
+  kitnet-service:
+    build: .
+    networks:
+      - nids-internal
+    restart: always
+    volumes:
+      - ./models:/app/models
+      - ./scripts:/app/scripts
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    command: python scripts/kitnet/kitnet_worker.py
+    depends_on:
+      trainer:
+        condition: service_completed_successfully
+      broker:
+        condition: service_started
+
 networks:
   nids-internal:
     driver: bridge

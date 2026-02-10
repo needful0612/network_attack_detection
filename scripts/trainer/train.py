@@ -37,15 +37,29 @@ from scripts.utils.utils import(
 )
 from scripts.config.setting import settings
 
-def start_training_svm():
-    RANDOM_SEED = settings.RANDOM_SEED
-    IS_ATTACK_THRESHOLD = settings.IS_ATTACK_THRESHOLD
+RANDOM_SEED = settings.RANDOM_SEED
+IS_ATTACK_THRESHOLD = settings.IS_ATTACK_THRESHOLD
 
-    MODEL_DIR = settings.MODEL_DIR
-    MODEL_PATH = settings.MODEL_PATH
-    CONFIG_PATH = settings.CONFIG_PATH
+MODEL_DIR = settings.MODEL_DIR
+MODEL_PATH = settings.MODEL_PATH
+CONFIG_PATH = settings.CONFIG_PATH
 
-    #-----------------
+DEPENDENCIES = [
+    __file__,
+    "scripts/trainer/svm/preprocess.py",
+    "scripts/trainer/svm/feature_pipeline.py",
+    "scripts/trainer/svm/stats_engine.py",
+    "scripts/trainer/svm/feature_selector.py",
+    "scripts/trainer/svm/data_sanitizor.py",
+    "scripts/trainer/svm/data_splitter.py",
+    "scripts/trainer/svm/model_evaluator.py",
+    "scripts/trainer/kitnet_trainer/kitnet_cold_start.py",
+    "scripts/config/setting.py",
+]
+
+CURRENT_HASH = get_project_hash(DEPENDENCIES)
+
+def check_project_status_skip_if_unchange():
     """
     CURRENT_HASH = get_script_hash(__file__)
 
@@ -56,36 +70,16 @@ def start_training_svm():
                 print(">>> Training script and model are up to date. Skipping...")
                 sys.exit(0)
     """
-    #----------------
-    dependencies = [
-        __file__,
-        "scripts/trainer/svm/preprocess.py",
-        "scripts/trainer/svm/feature_pipeline.py",
-        "scripts/trainer/svm/stats_engine.py",
-        "scripts/trainer/svm/feature_selector.py",
-        "scripts/trainer/svm/data_sanitizor.py",
-        "scripts/trainer/svm/data_splitter.py",
-        "scripts/trainer/svm/model_evaluator.py",
-        "scripts/config/setting.py"
-    ]
-
-    # Get the Master Fingerprint
-    CURRENT_HASH = get_project_hash(dependencies)
-    
-    MODEL_PATH = settings.MODEL_PATH
-    CONFIG_PATH = settings.CONFIG_PATH
-
     if os.path.exists(CONFIG_PATH) and os.path.exists(MODEL_PATH):
         with open(CONFIG_PATH, "r") as f:
             saved_config = json.load(f)
             if saved_config.get("hash") == CURRENT_HASH:
                 print(f">>> Project state {CURRENT_HASH[:8]} is up to date. Skipping...")
                 sys.exit(0)
-    #------------------------
-    new_lf = get_final_lazyframe()
-    #------------need check, cold start
+                
+def start_training_kitnet(lf: pl.LazyFrame):
     kitnet_lf = (
-        new_lf
+        lf
         .filter(pl.col("target") == 0)
         .head(55000)
     )
@@ -94,7 +88,13 @@ def start_training_svm():
 
     print(f">>> KitNET: Training on {materialized_df.shape} samples...")
     kitnet_cold_start(kitnet_lf)
-    print(">>> [SUCCESS] KitNET state saved to models/kitnet_state.pkl")
+    print(f">>> [SUCCESS] KitNET state saved to {MODEL_DIR}")
+
+def start_training_svm(
+    new_lf: pl.LazyFrame
+):
+    #------------------------
+    #new_lf = get_final_lazyframe()
     #-----------------------
 
     pipeline = feature_pipeline()
@@ -119,10 +119,11 @@ def start_training_svm():
     X_train, y_train = train
     X_val, y_val = val
     clear_memory('train_lf', 'val_lf', 'test_lf')
-
+    print(f">>> SVM: Training started...")
     base = LinearSVC(C=1.0, dual=False, max_iter=5000, random_state=RANDOM_SEED)
     clf = CalibratedClassifierCV(base, cv=5, method='sigmoid') 
     clf.fit(X_train, y_train)
+    print(f">>> SVM: Training finished...")
     #-----------------------------
     metrics = evaluate_svm(
         clf,
@@ -130,6 +131,7 @@ def start_training_svm():
         y_val,
         IS_ATTACK_THRESHOLD
     )
+    print(f">>> SVM: Evaluation Report...")
     print(metrics)
 
     avg_weights = get_avg_weight(clf)
@@ -151,4 +153,10 @@ def start_training_svm():
         
     print(f">>> [SUCCESS] Model and Config version {CURRENT_HASH[:8]} saved to {MODEL_DIR}")
     
-start_training_svm()
+def start_training_progress():
+    check_project_status_skip_if_unchange()
+    lf = get_final_lazyframe()
+    start_training_kitnet(lf)
+    start_training_svm(lf)
+    
+start_training_progress()

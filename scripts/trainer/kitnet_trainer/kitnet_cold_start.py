@@ -2,7 +2,7 @@ import os
 import pickle
 import polars as pl
 
-from scripts.kitnet.kitnet_worker import KitNetWorker
+from scripts.kitnet.kitnet_engine import KitNetWorker
 
 def kitnet_cold_start(lf: pl.LazyFrame):
     
