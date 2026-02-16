@@ -5,7 +5,6 @@ WORKDIR /build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpcap-dev \
-    procps \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -19,6 +18,7 @@ RUN apt-get update && apt-get install -y \
     libpcap0.8 \
     curl \
     iproute2 \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /install /usr/local

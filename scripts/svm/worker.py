@@ -41,7 +41,7 @@ except:
 
 PORT = 8000
 start_http_server(PORT)
-print("Prometheus metrics on SVM available on port {PORT}")
+print(f"Prometheus metrics on SVM available on port {PORT}")
     
 while True:
     # NOTE: apparently ">" means newest package

@@ -207,11 +207,9 @@ services:
     environment:
       - DOCKER_API_VERSION=1.44
     volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys:/sys:ro
+      - /var/run:/var/run:ro
     command: >
       --docker_only=true
       --housekeeping_interval=10s

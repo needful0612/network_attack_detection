@@ -27,7 +27,7 @@ except:
 
 PORT = 8000
 start_http_server(PORT)
-print("Prometheus metrics ON KITNET available on port {PORT}")
+print(f"Prometheus metrics ON KITNET available on port {PORT}")
 
 print(f"[*] {worker_name} is live. Waiting for packets...")
 
