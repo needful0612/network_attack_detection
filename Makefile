@@ -1,4 +1,4 @@
-COMPOSE_FILE := deployment/docker-compose.yml
+COMPOSE_FILE := docker/docker-compose.yml
 PROJECT_DIR  := .
 PROJECT_NAME := nids
 
