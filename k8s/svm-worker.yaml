@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: svm-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: svm-worker
+  template:
+    metadata:
+      labels:
+        app: svm-worker
+    spec:
+      initContainers:
+      - name: wait-for-models
+        image: busybox
+        command: ['sh', '-c', 'until [ -f /app/models/svm_bot_filter.onnx ]; do echo waiting for trainer; sleep 2; done;']
+        volumeMounts:
+        - name: model-storage
+          mountPath: /app/models
+      containers:
+      - name: svm-worker
+        image: kind-registry:5000/nids-main:latest
+        command: ["python", "scripts/svm/worker.py"]
+        env:
+        - name: MODEL_DIR
+          value: "/app/models"
+        - name: REDIS_ADDR
+          value: "broker:6379"
+        - name: PYTHONPATH
+          value: "/app"
+        volumeMounts:
+        - name: model-storage
+          mountPath: /app/models
+      volumes:
+      - name: model-storage
+        hostPath:
+          path: ${PROJECT_ROOT}/models
+          type: Directory

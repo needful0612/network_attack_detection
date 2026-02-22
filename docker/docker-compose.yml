@@ -17,7 +17,7 @@ services:
   trainer:
     build:
       context: .
-      dockerfile: deployment/Dockerfile
+      dockerfile: docker/Dockerfile
     volumes:
       - ./models:/app/models
       - ./data:/app/data
@@ -34,7 +34,7 @@ services:
   sniffer:
     build:
       context: .
-      dockerfile: deployment/Dockerfile
+      dockerfile: docker/Dockerfile
     networks:
       - nids-internal
     cap_add:
@@ -68,7 +68,7 @@ services:
   svm-service:
     build:
       context: .
-      dockerfile: deployment/Dockerfile
+      dockerfile: docker/Dockerfile
     networks:
       - nids-internal
     restart: always
@@ -96,7 +96,7 @@ services:
   kitnet-service:
     build:
       context: .
-      dockerfile: deployment/Dockerfile
+      dockerfile: docker/Dockerfile
     networks:
       - nids-internal
     restart: always
@@ -145,7 +145,7 @@ services:
   sinker:
     build:
       context: .
-      dockerfile: deployment/Dockerfile.sinker
+      dockerfile: docker/Dockerfile.sinker
     networks:
       - nids-internal
     environment:

@@ -1,3 +1,4 @@
+import os
 import redis
 import json
 import numpy as np
@@ -7,7 +8,8 @@ from scapy.all import sniff
 from scripts.feature_extractor.feature_extractor import feature_extractor
 from scripts.DTO.object.PacketInfo import PacketInfo
 
-R = redis.Redis(host='broker', port=6379)
+redis_host = os.getenv('REDIS_HOST', 'broker') 
+R = redis.Redis(host=redis_host, port=6379)
 R_Q = "triage_queue"
 
 def process_and_push(pkt):

@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nids-trainer
+spec:
+  template:
+    spec:
+      containers:
+      - name: trainer
+        image: kind-registry:5000/nids-main:latest
+        imagePullPolicy: IfNotPresent # only pull if not present
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            chmod +x ./get_data.sh && 
+            ./get_data.sh && 
+            python -m scripts.trainer.train
+        env:
+        - name: DATA_DIR
+          value: "/app/data"
+        - name: MODEL_DIR
+          value: "/app/models"
+        - name: PYTHONPATH
+          value: "/app"
+        volumeMounts:
+        - name: model-storage
+          mountPath: /app/models
+        - name: data-storage
+          mountPath: /app/data
+      volumes:
+      - name: model-storage
+        hostPath:
+          path: ${PROJECT_ROOT}/models
+          type: Directory
+      - name: data-storage
+        hostPath:
+          path: ${PROJECT_ROOT}/data
+          type: Directory
+      restartPolicy: OnFailure

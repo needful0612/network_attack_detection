@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+spec:
+  type: NodePort # This allows us to access it from Windows
+  selector:
+    app: grafana
+  ports:
+    - port: 3000
+      targetPort: 3000
+      nodePort: 30000 # This matches the 'hostPort' in your cluster-setup.sh
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: kind-registry:5000/nids-grafana:latest
+        env:
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: "admin"
+        # This points to the Prometheus service we'll build next
+        - name: GF_DATASOURCES_DEFAULT_URL
+          value: "http://prometheus:9090"
+        ports:
+        - containerPort: 3000

@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kitnet-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kitnet-worker
+  template:
+    metadata:
+      labels:
+        app: kitnet-worker
+    spec:
+      initContainers:
+      - name: wait-for-kitnet
+        image: busybox
+        command: ['sh', '-c', 'until [ -f /app/models/kitnet_state.pkl ]; do echo waiting for trainer; sleep 2; done;']
+        volumeMounts:
+        - name: model-storage
+          mountPath: /app/models
+      containers:
+      - name: kitnet-worker
+        image: kind-registry:5000/nids-main:latest
+        command: ["python", "scripts/kitnet/kitnet_worker.py"]
+        env:
+        - name: REDIS_ADDR
+          value: "broker:6379"
+        - name: MODEL_DIR
+          value: "/app/models"
+        volumeMounts:
+        - name: model-storage
+          mountPath: /app/models
+      volumes:
+      - name: model-storage
+        hostPath:
+          path: ${PROJECT_ROOT}/models
+          type: Directory

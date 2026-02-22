@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sniffer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sniffer
+  template:
+    metadata:
+      labels:
+        app: sniffer
+    spec:
+      # Use hostNetwork if you want to sniff the actual WSL/Node traffic
+      # Set to false if you only want to sniff the internal Pod network
+      hostNetwork: true 
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+      - name: sniffer
+        image: kind-registry:5000/nids-main:latest
+        imagePullPolicy: Always
+        command: ["/bin/sh", "-c"]
+        args: 
+          - "ip link set eth0 promisc on && python -m scripts.sniffer.sniffer"
+        securityContext:
+          privileged: true
+          capabilities:
+            add: ["NET_ADMIN", "NET_RAW"]
+        env:
+        - name: REDIS_HOST
+          value: "broker.default.svc.cluster.local"
+        - name: PYTHONPATH
+          value: "/app"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        volumeMounts:
+        - name: scripts-storage
+          mountPath: /app/scripts
+      volumes:
+      - name: scripts-storage
+        hostPath:
+          path: ${PROJECT_ROOT}/scripts
+          type: Directory
