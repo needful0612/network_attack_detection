@@ -44,6 +44,9 @@ clean-infra:
 	kubectl delete -f k8s/redis-exporter.yaml
 	kubectl delete configmap db-init-script || true
 
+clean-pvc:
+	kubectl delete pvc timescale-pvc
+
 clean-all: clean-infra
 	kubectl delete -f k8s/prometheus.yaml
 	kubectl delete -f k8s/sinker.yaml
@@ -102,7 +105,7 @@ watch:
 	watch kubectl get all
 
 logs-app:
-	kubectl logs -l 'app in (svm-worker, kitnet-worker, sinker, sniffer)' --all-containers=true -f --tail=50
+	kubectl logs -l 'app in (svm-worker, kitnet-worker, sinker, sniffer)' --all-containers=true -f --tail=50 --max-log-requests=10
 
 logs-trainer:
 	kubectl logs -l job-name=nids-trainer -f
@@ -115,3 +118,35 @@ check-models:
 
 debug:
 	kubectl describe pod $(pod)
+
+# --- Deployment test ----
+simulate-attack:
+	kubectl delete job traffic-generator --ignore-not-found=true
+	cat k8s/traffic-generator.yaml | sed 's|$${PROJECT_ROOT}|$(PROJECT_ROOT)|g' | kubectl apply -f -
+
+# --- full deployment ---
+run-deployment: cluster-up build-and-push-all
+	@echo ">>> Deploying Infrastructure..."
+	$(MAKE) deploy-infra
+	
+	@echo ">>> Polling for broker Deployment..."
+	@until kubectl get deployment broker >/dev/null 2>&1; do \
+		echo "Waiting for Redis resource to be created in K8s..."; \
+		sleep 2; \
+	done
+	kubectl wait --for=condition=available deployment/broker --timeout=60s
+
+	@echo ">>> Polling for DB Deployment..."
+	@until kubectl get deployment db >/dev/null 2>&1; do \
+		echo "Waiting for DB resource to be created in K8s..."; \
+		sleep 2; \
+	done
+	kubectl wait --for=condition=available deployment/db --timeout=120s
+	
+	@echo ">>> Starting Training Job..."
+	$(MAKE) train
+	@echo ">>> Waiting for Models to generate..."
+	kubectl wait --for=condition=complete job/nids-trainer --timeout=300s
+	
+	@echo ">>> Deploying Application..."
+	$(MAKE) deploy-app

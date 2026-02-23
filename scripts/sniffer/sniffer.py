@@ -12,6 +12,16 @@ redis_host = os.getenv('REDIS_HOST', 'broker')
 R = redis.Redis(host=redis_host, port=6379)
 R_Q = "triage_queue"
 
+traffic_filter = (
+    "(tcp or udp) "
+    "and not net 172.21.0.0/16 "
+    "and not port 22 "
+    "and not port 5432 "
+    "and not port 6379 "
+    "and not port 8000 "
+    "and not port 10250"
+)
+
 def process_and_push(pkt):
     try:
         f = feature_extractor(pkt)
@@ -35,8 +45,10 @@ def process_and_push(pkt):
 
 print(F"Starting Sniffer. Pushing to Redis {R_Q}...")
 sniff(
-    iface="eth0", 
-    filter="(tcp or udp) and not port 6379 and not port 8000", 
+    # testing in docker-compose use this interface
+    # iface="eth0"
+    iface="eth1",
+    filter=traffic_filter,
     prn=process_and_push, 
     store=0
 )

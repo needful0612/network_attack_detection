@@ -9,7 +9,7 @@ spec:
   ports:
     - port: 3000
       targetPort: 3000
-      nodePort: 30000 # This matches the 'hostPort' in your cluster-setup.sh
+      nodePort: 30000
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -31,7 +31,6 @@ spec:
         env:
         - name: GF_SECURITY_ADMIN_PASSWORD
           value: "admin"
-        # This points to the Prometheus service we'll build next
         - name: GF_DATASOURCES_DEFAULT_URL
           value: "http://prometheus:9090"
         ports:

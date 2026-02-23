@@ -1,21 +1,4 @@
 apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: db-init-script
-data:
-  init.sql: |
-    -- PASTE YOUR init.sql CONTENT HERE
-    CREATE TABLE IF NOT EXISTS detections (
-        id SERIAL PRIMARY KEY,
-        timestamp TIMESTAMP,
-        source_ip TEXT,
-        anomaly_score FLOAT,
-        svm_score FLOAT,
-        kitnet_score FLOAT
-    );
-    -- Add any other tables or hypertable commands from your file
----
-apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: timescale-pvc
@@ -54,7 +37,7 @@ spec:
           mountPath: /var/lib/postgresql/data
         - name: init-script
           mountPath: /docker-entrypoint-initdb.d/init.sql
-          subPath: init.sql # This mounts the key from the ConfigMap as a file
+          subPath: init.sql
       volumes:
       - name: db-storage
         persistentVolumeClaim:

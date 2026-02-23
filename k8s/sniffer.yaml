@@ -21,8 +21,15 @@ spec:
         image: kind-registry:5000/nids-main:latest
         imagePullPolicy: Always
         command: ["/bin/sh", "-c"]
+        # args: 
+          # - "ip link set eth0 promisc on && python -m scripts.sniffer.sniffer"
         args: 
-          - "ip link set eth0 promisc on && python -m scripts.sniffer.sniffer"
+          - |
+            ip link delete eth1 2>/dev/null || true;
+            ip link add eth1 type dummy || true;
+            ip link set eth1 up || true;
+            ip link set eth1 promisc on || true;
+            python -m scripts.sniffer.sniffer
         securityContext:
           privileged: true
           capabilities:
