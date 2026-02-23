@@ -74,7 +74,7 @@ This project utilizes the **Kitsune Network Attack** datasets (~GBs of raw CSV).
 ---
 
 ## Roadmap (Next Steps)
-* **Observability**: Resolve gRPC/HTTP health check failures and implement deep Liveness/Readiness probes based on Redis consumer lag.
+* **Observability**: Resolve HTTP/TCP health check failures and implement deep Liveness/Readiness probes based on Redis consumer lag.
 * **CI/CD**: Build GitHub Actions for automated ONNX linting and multi-arch Docker builds.
 * **IaC Migration**: Transition from raw YAML to **Helm Charts** for modular environment management.
 * **Self-Healing**: Implement Horizontal Pod Autoscaler (HPA) to scale inference workers based on stream depth.
