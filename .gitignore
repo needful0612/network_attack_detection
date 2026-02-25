@@ -11,3 +11,11 @@ __pycache__/
 .ipynb_checkpoints/
 .DS_STORE
 doc/
+
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/vendor/

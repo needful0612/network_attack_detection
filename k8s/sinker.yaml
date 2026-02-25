@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sinker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sinker
+  template:
+    metadata:
+      labels:
+        app: sinker
+    spec:
+      containers:
+      - name: sinker
+        image: kind-registry:5000/nids-sinker:latest
+        env:
+        - name: REDIS_ADDR
+          value: "broker:6379"
+        - name: DB_URL
+          value: "postgres://postgres:postgres_pass@db:5432/nids_db?sslmode=disable"

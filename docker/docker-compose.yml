@@ -1,0 +1,226 @@
+services:
+
+  broker:
+    image: redis:alpine
+    # force not snapshot
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    networks:
+      - nids-internal
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      
+  trainer:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+      - ./scripts:/app/scripts
+    command: >
+      sh -e -c "
+      chmod +x ./get_data.sh && 
+      ./get_data.sh && 
+      echo '>>> Starting Training Process...' &&
+      python -m scripts.trainer.train
+      "
+
+  # this might need sampling algorithm to sniff packages or horizontal scales?
+  sniffer:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    networks:
+      - nids-internal
+    cap_add:
+      - NET_ADMIN  # Required to run 'ip link set'
+      - NET_RAW    # Required for Scapy to sniff
+    volumes:
+      - ./scripts:/app/scripts
+      # sync timezone
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    environment:
+      - PYTHONUNBUFFERED=1 # stop python from buffering output
+      - PYTHONPATH=/app
+    entrypoint: /bin/sh -c "ip link set eth0 promisc on && python -m scripts.sniffer.sniffer"
+    depends_on:
+      svm-service:
+        condition: service_started
+      broker:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'python.*scripts.sniffer.sniffer' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  svm-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    networks:
+      - nids-internal
+    restart: always
+    volumes:
+      - ./models:/app/models
+      - ./scripts:/app/scripts
+      # sync timezone
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    command: python scripts/svm/worker.py
+    depends_on:
+      trainer:
+        condition: service_completed_successfully
+      broker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f scripts/svm/worker.py || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  kitnet-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    networks:
+      - nids-internal
+    restart: always
+    volumes:
+      - ./models:/app/models
+      - ./scripts:/app/scripts
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    command: python scripts/kitnet/kitnet_worker.py
+    depends_on:
+      trainer:
+        condition: service_completed_successfully
+      broker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f scripts/kitnet/kitnet_worker.py || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  db:
+    image: timescale/timescaledb:latest-pg15
+    restart: always
+    networks:
+      - nids-internal
+    environment:
+      - POSTGRES_PASSWORD=postgres_pass
+      - POSTGRES_DB=nids_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+      # ro = read only
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  sinker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.sinker
+    networks:
+      - nids-internal
+    environment:
+      - REDIS_ADDR=broker:6379
+      - DB_URL=postgres://postgres:postgres_pass@db:5432/nids_db?sslmode=disable
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      broker:
+        condition: service_healthy
+
+    healthcheck:
+    # sync with the name in sinker's dockerfile
+      test: ["CMD-SHELL", "pgrep -x sinker_bin || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    environment:
+      - REDIS_ADDR=redis://broker:6379
+    networks:
+      - nids-internal
+    ports:
+      - "9121:9121"
+    depends_on:
+      broker:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:latest
+    networks:
+      - nids-internal
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    networks:
+      - nids-internal
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_DATASOURCES_DEFAULT_URL=http://prometheus:9090
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.0
+    container_name: cadvisor
+    privileged: true
+    pid: host
+    user: "0:1001"
+    environment:
+      - DOCKER_API_VERSION=1.44
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys:/sys:ro
+      - /var/run:/var/run:ro
+    command: >
+      --docker_only=true
+      --housekeeping_interval=10s
+      --disable_root_cgroup_stats=false
+    networks:
+      - nids-internal
+    restart: unless-stopped
+
+volumes:
+  timescale_data:
+
+networks:
+  nids-internal:
+    driver: bridge
