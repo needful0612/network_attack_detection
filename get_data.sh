@@ -24,4 +24,8 @@ for FILE_PATH in "${FILES[@]}"; do
     fi
 done
 
-echo "Download complete. Files located in ./data"
+echo "Extracting..."
+gunzip "Mirai_dataset.csv.gz"
+gunzip -k "Mirai_pcap.pcap.gz"
+
+echo "Download and extracted needed files. Files located in ./data"

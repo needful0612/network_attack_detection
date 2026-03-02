@@ -9,7 +9,12 @@ REPO     := nids
 
 PROJECT_ROOT := $(shell pwd)
 
-.PHONY: up build_up down logs restart ps cluster-up cluster-down build-all push-all build-main build-sinker build-grafana
+.PHONY: clean-artifacts up build_up down logs restart ps cluster-up cluster-down build-all push-all build-main build-sinker build-grafana
+
+clean-artifacts:
+	rm -rf data
+	rm -rf models
+
 # --- Docker Compose (Local Dev) ---
 up:
 	$(DOCKER_COMPOSE) up -d
