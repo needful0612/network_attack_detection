@@ -9,14 +9,21 @@ spec:
       containers:
       - name: netshoot
         image: nicolaka/netshoot
+        securityContext:
+          privileged: true
         command: ["/bin/sh", "-c"]
         args:
           - |
             apk add tcpreplay
-            ip link delete eth1 2>/dev/null || true;
-            ip link add eth1 type dummy || true;
-            ip link set eth1 up || true;
-            ip link set eth1 promisc on || true;
+            if ! ip link show eth1 > /dev/null 2>&1; then
+                echo "eth1 not found. Creating dummy interface..."
+                ip link add eth1 type dummy || true
+                ip link set eth1 up || true
+                ip link set eth1 promisc on || true
+            else
+                echo "eth1 already exists. Using existing interface."#
+                ip link set eth1 up || true
+            fi
             tcpreplay --intf1=eth1 --pps=5000 /data/Mirai_pcap.pcap
         volumeMounts:
         - name: pcap-data

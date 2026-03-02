@@ -31,9 +31,9 @@ spec:
       - name: model-storage
         hostPath:
           path: ${PROJECT_ROOT}/models
-          type: Directory
+          type: DirectoryOrCreate
       - name: data-storage
         hostPath:
           path: ${PROJECT_ROOT}/data
-          type: Directory
+          type: DirectoryOrCreate
       restartPolicy: OnFailure

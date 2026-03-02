@@ -25,10 +25,16 @@ spec:
           # - "ip link set eth0 promisc on && python -m scripts.sniffer.sniffer"
         args: 
           - |
-            ip link delete eth1 2>/dev/null || true;
-            ip link add eth1 type dummy || true;
-            ip link set eth1 up || true;
-            ip link set eth1 promisc on || true;
+            if ! ip link show eth1 > /dev/null 2>&1; then
+                echo "eth1 not found. Creating dummy interface..."
+                ip link add eth1 type dummy || true
+                ip link set eth1 up || true
+                ip link set eth1 promisc on || true
+            else
+                echo "eth1 already exists. Using existing interface."#
+                ip link set eth1 up || true
+            fi
+
             python -m scripts.sniffer.sniffer
         securityContext:
           privileged: true
