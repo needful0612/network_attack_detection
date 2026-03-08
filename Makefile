@@ -167,3 +167,13 @@ run-deployment: cluster-up build-and-push-all
 	
 	@echo ">>> Deploying Application..."
 	$(MAKE) deploy-app
+
+generate-protos:
+	docker run --rm -v $(PWD):/workspace -w /workspace python:3.11-slim sh -c "\
+		apt-get update && apt-get install -y protobuf-compiler && \
+		pip install mypy-protobuf && \
+		protoc -I./protos \
+		--python_out=./scripts/DTO \
+		--mypy_out=./scripts/DTO \
+		./protos/packet.proto && \
+		chown $(shell id -u):$(shell id -g) ./scripts/DTO/packet_pb2.py* "
