@@ -9,11 +9,14 @@ REPO     := nids
 
 PROJECT_ROOT := $(shell pwd)
 
-.PHONY: clean-artifacts up build_up down logs restart ps cluster-up cluster-down build-all push-all build-main build-sinker build-grafana
-
-clean-artifacts:
-	rm -rf data
-	rm -rf models
+.PHONY: up build_up logs down restart ps \
+        cluster-up cluster-down clear-network \
+        clean-infra clean-pvc clean-all clean-artifacts \
+        rollout deploy-db deploy-infra deploy-app train \
+        status-all status watch logs-app logs-trainer check-models debug \
+        simulate-attack run-deployment \
+        build-and-push-all build-all push-all \
+        build-main build-sinker build-grafana
 
 # --- Docker Compose (Local Dev) ---
 up:
@@ -51,13 +54,22 @@ clean-infra:
 
 clean-pvc:
 	kubectl delete pvc timescale-pvc
-
+	
 clean-all: clean-infra
 	kubectl delete -f k8s/prometheus.yaml
 	kubectl delete -f k8s/sinker.yaml
 	kubectl delete -f k8s/svm-worker.yaml
 	kubectl delete -f k8s/kitnet-worker.yaml
 	kubectl delete -f k8s/sniffer.yaml
+
+clean-artifacts:
+	sudo rm -rf data
+	sudo rm -rf models
+
+# Usage: make rollout name=sniffer
+rollout:
+	kubectl rollout restart deployment $(name)
+	kubectl rollout status deployment $(name)
 
 # --- Build & Push ---
 build-and-push-all: build-all push-all
@@ -155,3 +167,13 @@ run-deployment: cluster-up build-and-push-all
 	
 	@echo ">>> Deploying Application..."
 	$(MAKE) deploy-app
+
+generate-protos:
+	docker run --rm -v $(PWD):/workspace -w /workspace python:3.11-slim sh -c "\
+		apt-get update && apt-get install -y protobuf-compiler && \
+		pip install mypy-protobuf && \
+		protoc -I./protos \
+		--python_out=./scripts/DTO \
+		--mypy_out=./scripts/DTO \
+		./protos/packet.proto && \
+		chown $(shell id -u):$(shell id -g) ./scripts/DTO/packet_pb2.py* "

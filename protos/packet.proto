@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+message PacketInfo {
+  string task_id = 1;
+  double timestamp = 2;
+  string src_ip = 3;
+  string dst_ip = 4;
+  int32 src_port = 5;
+  int32 dst_port = 6;
+  repeated float features = 7;
+}
