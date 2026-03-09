@@ -1,0 +1,37 @@
+global:
+  projectRoot: ""
+  registry: "kind-registry:5000"
+
+database:
+  image: timescale/timescaledb:latest-pg15
+  storage: 1Gi
+  password: "postgres_pass"
+  dbName: "nids_db"
+  persistence:
+    enabled: true
+
+trainer:
+  image: "kind-registry:5000/nids-main:latest"
+  enabled: true
+
+workers:
+  kitnet:
+    replicas: 1
+    image: "kind-registry:5000/nids-main:latest"
+
+prometheus:
+  image: prom/prometheus:latest
+  scrapeInterval: 15s
+
+grafana:
+  image: "kind-registry:5000/nids-grafana:latest"
+  adminPassword: "admin"
+  nodePort: 30000
+  replicaCount: 1
+
+redisExporter:
+  image: oliver006/redis_exporter:latest
+  port: 9121
+
+e2e:
+  enabled: false

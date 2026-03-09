@@ -1,0 +1,41 @@
+{{- if .Values.trainer.enabled -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-trainer
+spec:
+  template:
+    spec:
+      containers:
+      - name: trainer
+        image: {{ .Values.trainer.image }}
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            chmod +x ./get_data.sh && 
+            ./get_data.sh && 
+            python -m scripts.trainer.train
+        env:
+        - name: DATA_DIR
+          value: "/app/data"
+        - name: MODEL_DIR
+          value: "/app/models"
+        - name: PYTHONPATH
+          value: "/app"
+        volumeMounts:
+        - name: model-storage
+          mountPath: /app/models
+        - name: data-storage
+          mountPath: /app/data
+      volumes:
+      - name: model-storage
+        hostPath:
+          path: {{ .Values.global.projectRoot }}/models
+          type: DirectoryOrCreate
+      - name: data-storage
+        hostPath:
+          path: {{ .Values.global.projectRoot }}/data
+          type: DirectoryOrCreate
+      restartPolicy: OnFailure
+{{- end }}

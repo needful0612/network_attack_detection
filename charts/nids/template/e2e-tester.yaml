@@ -1,0 +1,63 @@
+{{- if .Values.e2e.enabled -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-e2e-test
+spec:
+  template:
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      restartPolicy: Never
+      containers:
+      - name: e2e-tester
+        image: {{ .Values.global.registry }}/nids-main:latest
+        imagePullPolicy: Always
+        securityContext:
+          privileged: true
+        env:
+        - name: REDIS_ADDR
+          value: "{{ .Release.Name }}-broker:6379"
+        - name: DB_URL
+          value: "postgres://postgres:{{ .Values.database.password }}@{{ .Release.Name }}-db:5432/{{ .Values.database.dbName }}?sslmode=disable"
+        - name: PYTHONPATH
+          value: "/app"
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            apt-get update && apt-get install -y tcpreplay
+            if ! ip link show eth1 > /dev/null 2>&1; then
+                ip link add eth1 type dummy || true
+                ip link set eth1 up || true
+            fi
+            
+            echo "[*] Injecting Mirai attack traffic..."
+            tcpreplay --intf1=eth1 --pps=1000 /data/Mirai_pcap.pcap &
+            
+            echo "[*] Waiting for pipeline processing..."
+            sleep 15
+            
+            echo "[*] Running verification suite..."
+            # Using the absolute path we know from the mount below
+            python3 -m pytest /app/pytester/e2e/integration_tester.py
+        volumeMounts:
+        - name: pcap-data
+          mountPath: /data
+        - name: scripts-storage
+          mountPath: /app/scripts
+        - name: pytester-storage
+          mountPath: /app/pytester
+      volumes:
+      - name: pcap-data
+        hostPath:
+          path: {{ .Values.global.projectRoot }}/data
+          type: Directory
+      - name: scripts-storage
+        hostPath:
+          path: {{ .Values.global.projectRoot }}/scripts
+          type: Directory
+      - name: pytester-storage
+        hostPath:
+          path: {{ .Values.global.projectRoot }}/pytester
+          type: Directory
+{{- end }}
