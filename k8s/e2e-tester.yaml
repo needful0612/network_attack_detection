@@ -1,0 +1,62 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nids-e2e-test
+spec:
+  template:
+    spec:
+      hostNetwork: true
+      # check into cluster before give up
+      # don't give up bro
+      dnsPolicy: ClusterFirstWithHostNet
+      restartPolicy: Never
+      containers:
+      - name: e2e-tester
+        image: kind-registry:5000/nids-main:latest
+        imagePullPolicy: Always
+        securityContext:
+          privileged: true
+        env:
+        - name: REDIS_ADDR
+          value: "broker:6379"
+        - name: DB_URL
+          value: "postgres://postgres:postgres_pass@db.default.svc.cluster.local:5432/nids_db?sslmode=disable"
+        - name: PYTHONPATH
+          value: "/app"
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            apt-get update && apt-get install -y tcpreplay
+            if ! ip link show eth1 > /dev/null 2>&1; then
+                ip link add eth1 type dummy || true
+                ip link set eth1 up || true
+            fi
+            
+            echo "[*] Injecting Mirai attack traffic..."
+            tcpreplay --intf1=eth1 --pps=1000 /data/Mirai_pcap.pcap &
+            
+            echo "[*] Waiting for pipeline processing..."
+            sleep 15
+            
+            echo "[*] Running verification suite..."
+            pytest pytester/e2e/integration_tester.py
+        volumeMounts:
+        - name: pcap-data
+          mountPath: /data
+        - name: scripts-storage
+          mountPath: /app/scripts
+        - name: pytester-storage
+          mountPath: /app/pytester
+      volumes:
+      - name: pcap-data
+        hostPath:
+          path: ${PROJECT_ROOT}/data
+          type: Directory
+      - name: scripts-storage
+        hostPath:
+          path: ${PROJECT_ROOT}/scripts
+          type: Directory
+      - name: pytester-storage
+        hostPath:
+          path: ${PROJECT_ROOT}/pytester
+          type: Directory
