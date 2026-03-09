@@ -16,7 +16,8 @@ PROJECT_ROOT := $(shell pwd)
         status-all status watch logs-app logs-trainer check-models debug \
         simulate-attack run-deployment \
         build-and-push-all build-all push-all \
-        build-main build-sinker build-grafana
+        build-main build-sinker build-grafana \
+		e2e-test
 
 # --- Docker Compose (Local Dev) ---
 up:
@@ -177,3 +178,12 @@ generate-protos:
 		--mypy_out=./scripts/DTO \
 		./protos/packet.proto && \
 		chown $(shell id -u):$(shell id -g) ./scripts/DTO/packet_pb2.py* "
+
+e2e-test:
+	@echo ">>> Cleaning up previous E2E jobs..."
+	-kubectl delete job nids-e2e-test 2>/dev/null || true
+	@echo ">>> Deploying E2E Integration Tester..."
+	cat k8s/e2e-tester.yaml | sed 's|$${PROJECT_ROOT}|$(PROJECT_ROOT)|g' | kubectl apply -f -
+	@echo ">>> Waiting for E2E test to complete (timeout 60s)..."
+	@kubectl wait --for=condition=complete job/nids-e2e-test --timeout=60s || (echo "E2E Test Failed or Timed Out" && kubectl logs job/nids-e2e-test && exit 1)
+	@echo ">>> E2E Test Passed"

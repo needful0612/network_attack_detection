@@ -12,8 +12,7 @@ spec:
       labels:
         app: sniffer
     spec:
-      # Use hostNetwork if you want to sniff the actual WSL/Node traffic
-      # Set to false if you only want to sniff the internal Pod network
+      # Used hostnetwork here to isolate from in cluster heartbeat traffic
       hostNetwork: true 
       dnsPolicy: ClusterFirstWithHostNet
       containers:

@@ -25,7 +25,7 @@ for FILE_PATH in "${FILES[@]}"; do
 done
 
 echo "Extracting..."
-gunzip "Mirai_dataset.csv.gz"
+gunzip -k "Mirai_dataset.csv.gz"
 gunzip -k "Mirai_pcap.pcap.gz"
 
 echo "Download and extracted needed files. Files located in ./data"
