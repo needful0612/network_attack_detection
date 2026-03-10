@@ -6,7 +6,7 @@ A microservices-based pipeline for real-time network traffic analysis, feature e
 The system transitions from a monolithic capture tool to an asynchronous, scalable pipeline prioritizing high-fidelity detection through an **Ensemble Voting** mechanism.
 
 ### Service Roles
-* **Sniffer (Go/C)**: Captures raw traffic via `libpcap` on the `hostNetwork`. It performs real-time feature extraction and publishes Protobuf-encoded features to the Redis Broker.
+* **Sniffer**: Captures raw traffic on the `hostNetwork`. It performs real-time feature extraction and publishes Protobuf-encoded features to the Redis Broker.
 * **Broker (Redis Streams)**: Manages message distribution using a **Fan-out pattern**. This allows parallel processing of the same traffic stream by multiple specialized workers.
 * **Inference Workers (Python/ONNX)**: 
     * **SVM Worker**: Supervised classification for known threat signatures (Mirai, Gafgyt).
@@ -49,13 +49,13 @@ To verify the pipeline against a Mirai botnet attack:
 
 ### E2E Test & `hostNetwork` DNS Conflict
 
-**The Issue:** To inject traffic into the host interface, the Pod must use the host network namespace. This causes it to inherit the host's DNS settings (e.g., Fedora's `systemd-resolved`), which often fails to resolve internal K8s addresses like `nids-db.default.svc.cluster.local`.
+**The Issue:** To inject traffic into the host interface, the Pod must use the host network namespace. This causes it to inherit the host's DNS settings, which often fails to resolve internal K8s addresses like `nids-db.default.svc.cluster.local`.
 
 ---
 
 ## 5. Engineering Reflections (Technical Decisions)
 
-Building this N-IDS required several architectural trade-offs to balance low-latency analysis with cloud-native reliability:
+Building this Project required several architectural trade-offs to balance low-latency analysis with cloud-native reliability:
 
 * **Reliable Persistence**: A high-performance consumer using Redis Consumer Groups. It implements XAutoClaim to detect and recover "stalled" messages. If a Sinker instance fails during a database write, other instances automatically claim the pending alerts to ensure 100% persistence reliability.
 * **ONNX for Inference**: By exporting Python models to ONNX allows workers to handle high packet-per-second (PPS) loads on standard CPU nodes without requiring GPU acceleration.
@@ -67,7 +67,7 @@ Building this N-IDS required several architectural trade-offs to balance low-lat
 The current architecture is a functional distributed alpha. Future development is focused on making this into a production-grade piepline and observability:
 
 ### High-Performance Networking & Kernel Optimization
-* **XDP/eBPF Ingestion**: Transition the Sniffer from standard `libpcap` to **eBPF (XDP)**. By processing packets directly in the NIC driver space, we can drop or redirect traffic before it even hits the heavy Linux networking stack, significantly reducing CPU overhead.
+* **XDP/eBPF Ingestion**: Transition the Sniffer from scapy to **eBPF (XDP)**. By processing packets directly in the NIC driver space, we can drop or redirect traffic before it even hits the heavy Linux networking stack, significantly reducing CPU overhead.
 * **io_uring for Async I/O**: Implement `io_uring` in the Go Sinker and Sniffer to handle disk and socket I/O. This reduces expensive system calls and context switching when streaming massive amounts of feature data to Redis or TimescaleDB.
 
 ### Observability & Resilience
