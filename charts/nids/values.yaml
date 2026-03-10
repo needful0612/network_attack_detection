@@ -1,0 +1,69 @@
+global:
+  projectRoot: ""
+  registry: "kind-registry:5000"
+
+database:
+  image: timescale/timescaledb:latest-pg15
+  storage: 1Gi
+  password: "postgres_pass"
+  dbName: "nids_db"
+  persistence:
+    enabled: true
+
+redis:
+  image: redis:alpine
+  port: 6379
+  args: ["redis-server", "--save", "", "--appendonly", "no"]
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+sniffer:
+  interface: "eth1"
+  mode: "deployment"
+
+sinker:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+trainer:
+  image: "kind-registry:5000/nids-main:latest"
+  enabled: true
+
+workers:
+  kitnet:
+    replicas: 1
+    image: "kind-registry:5000/nids-main:latest"
+    command: ["python", "scripts/kitnet/kitnet_worker.py"]
+    waitFile: "kitnet_state.pkl"
+  svm:
+    replicas: 1
+    image: "kind-registry:5000/nids-main:latest"
+    command: ["python", "scripts/svm/worker.py"]
+    waitFile: "svm_bot_filter.onnx"
+
+prometheus:
+  image: prom/prometheus:latest
+  scrapeInterval: 15s
+
+grafana:
+  image: "kind-registry:5000/nids-grafana:latest"
+  adminPassword: "admin"
+  nodePort: 30000
+  replicaCount: 1
+
+redisExporter:
+  image: oliver006/redis_exporter:latest
+  port: 9121
+
+e2e:
+  enabled: true
