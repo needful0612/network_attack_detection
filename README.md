@@ -1,80 +1,85 @@
-# Tiered NIDS: Ensemble Voting Pipeline
+# N-IDS: Distributed Network Intrusion Detection System
 
-This project implements a distributed, cloud-native pipeline for Network Intrusion Detection (NIDS). It transitions from a monolithic capture tool to a scalable microservices architecture that prioritizes high-fidelity detection through an **Ensemble Voting** mechanism.
+A microservices-based pipeline for real-time network traffic analysis, feature extraction, and multi-model threat classification. Built for Kubernetes using Go, Python (ONNX), and Redis Streams.
 
-Instead of relying on a single model, the system captures traffic and broadcasts features to multiple specialized workers:
-- **Supervised Voting (SVM)**: A calibrated Linear SVM trained on known botnet signatures to identify specific attack patterns.
-- **Unsupervised Voting (KitNet)**: An online anomaly detection ensemble (Autoencoders) that identifies novel threats without prior training.
-- **Reliable Persistence**: A dedicated **Go-based Sinker** that aggregates these "votes," determines the final alert state, and ensures persistence.
+## 1. System Architecture
+The system transitions from a monolithic capture tool to an asynchronous, scalable pipeline prioritizing high-fidelity detection through an **Ensemble Voting** mechanism.
 
+### Service Roles
+* **Sniffer (Go/C)**: Captures raw traffic via `libpcap` on the `hostNetwork`. It performs real-time feature extraction and publishes Protobuf-encoded features to the Redis Broker.
+* **Broker (Redis Streams)**: Manages message distribution using a **Fan-out pattern**. This allows parallel processing of the same traffic stream by multiple specialized workers.
+* **Inference Workers (Python/ONNX)**: 
+    * **SVM Worker**: Supervised classification for known threat signatures (Mirai, Gafgyt).
+    * **KitNet Worker**: Unsupervised anomaly detection for novel zero-day threats.
+* **Sinker (Go)**: A high-performance consumer utilizing **Redis Consumer Groups** and **AutoClaim** logic to ensure zero-drop persistence into the database.
+* **Database (TimescaleDB)**: Stores alert scores and traffic metadata for historical analysis and Grafana visualization.
 
-
-## System Architecture
-The system is orchestrated on **Kubernetes**, leveraging asynchronous streaming to ensure zero packet loss during analysis spikes:
-
-* **Sniffer Pod (hostNetwork)**: Directly attaches to the host interface to capture raw traffic. It performs real-time feature extraction and streams data to the Redis Broker. 
-* **The Broker (Redis Streams)**: Acts as the load balancer and buffer. By using a **Fan-out pattern**, it allows both the SVM and KitNet workers to process the same stream of data in parallel.
-* **Parallel Inference Workers (Python/ONNX)**:
-    * **SVM Worker**: Supervised classification for known threat patterns.
-    * **KitNet Worker**: Unsupervised anomaly detection for zero-day threats.
-    * **Decision Logic**: By running these in parallel, the system cross-references "known attacks" with "unusual behavior" to drastically reduce false positives.
-* **The Sinker (Go)**: A high-performance consumer that manages Redis Consumer Groups. It implements **AutoClaim** logic to ensure no security alert is ever dropped, even during service interruptions.
-* **Database (TimescaleDB)**: A time-series optimized PostgreSQL instance that stores the combined scores for historical analysis and Grafana visualization.
-
----
-
-## Technical Specifications
+## 2. Technical Specifications
 
 ### Feature Engineering & Preprocessing
-To resolve signal instability and overfitting common in raw network datasets, a custom "Precision-Safe" pipeline was implemented:
-
-1.  **The "Clock Purge"**: Dropped unstable features with low lambda windows (80, 77, 74, 71, and 68) where signal variance was below 0.01.
-2.  **Burst Ratios**: Replaced raw weights with logarithmic differences: $log1p(fast\_stream) - log1p(slow\_stream)$.
+To handle signal instability in network telemetry, a custom pipeline was implemented:
+1.  **Clock Purge**: Dropped features with variance $< 0.01$ in low lambda windows.
+2.  **Logarithmic Burst Ratios**: Replaced weights with differences: $log1p(fast\_stream) - log1p(slow\_stream)$.
 3.  **Symmetric Log Transform**: Applied to handle long-tailed distributions: $sign(x) \cdot \log(1 + |x|)$.
-4.  **Robust Scaling**: Scaled features using Median and IQR to minimize outlier impact.
-5.  **Hard Clipping**: Feature values are clipped to $[-10, 10]$ to prevent outlier-driven instability in the SVM hyperplane.
+4.  **Hard Clipping**: Feature values are clipped to $[-10, 10]$ to maintain SVM hyperplane stability.
 
-### Model Selection & Performance
-* **Algorithm**: Linear Support Vector Classifier (LinearSVC) with L2 regularization for stable decision boundaries.
-* **Probability Calibration**: Uses **Platt Scaling** (Sigmoid calibration) to transform SVM decision margins into usable probability scores.
-* **Format**: Exported to **ONNX** for low-latency, CPU-bound inference in production.
+## 3. Operational Guide
 
----
+### Local & Cluster Setup
+The project utilizes a `Makefile` to abstract complex Kubernetes/Docker commands.
 
-## Deployment Guide
+> **Note**: To use `make helm-` commands, you must have the **Helm** binary installed. Refer to the [official Helm installation guide](https://helm.sh/docs/intro/install/).
 
-### Step 0: Data Acquisition & Permissions
-This project utilizes the **Kitsune Network Attack** datasets (~GBs of raw CSV).
-1.  **Disk Space**: Ensure at least 10GB of free space.
-2.  **Acquire Data**:
-    ```bash
-    chmod +x ./get_data.sh
-    ./get_data.sh
-    chmod -R 755 data/ models/
-    ```
+| Command | Action |
+| :--- | :--- |
+| `make cluster-up` | Initializes KinD cluster and local registry. |
+| `make build-all` | Builds all Docker images (Main, Sinker, Grafana). |
+| `make run-deployment` | Deploys full stack (DB, Redis, App) with automated health checks. |
+| `make helm-install` | Deploys the stack using the local Helm chart. |
+| `make logs-app` | Streams logs from all active microservices. |
 
-### Option 1: Local Development (Docker Compose)
-1.  **Spin up services**: `make build_up`
-2.  **Network Interface**: Ensure `scripts/sniffer/sniffer.py` is set to `iface="eth0"`.
-3.  **Simulate Traffic**:
-    > **Note**: Match the network name to your project prefix (default: `nids_nids-internal`).
-    ```bash
-    docker run --rm -v $(pwd)/data:/data --network nids_nids-internal nicolaka/netshoot /bin/sh -c "apk add tcpreplay && tcpreplay --intf1=eth0 --pps=5000 /data/Mirai_pcap.pcap"
-    ```
-
-### Option 2: Cloud-Native Simulation (Kubernetes / KinD)
-1.  **Full Automated Deployment**: `make run-deployment`
-2.  **Traffic Simulation**: 
-    > **Note**: Ensure `sniffer.py` is set to `iface="eth1"` for K8s hostNetwork capture.
-    ```bash
-    make simulate-attack
-    make logs-app
-    ```
+### Testing & Simulation
+To verify the pipeline against a Mirai botnet attack:
+1.  **Simulate Traffic**: `make simulate-attack` (Replays PCAP into the host's dummy `eth1` interface).
+2.  **Verify Results**: `make e2e-test` or `make helm-e2e-test`. This executes a `pytest` suite that queries TimescaleDB to confirm that alerts were successfully generated and persisted.
 
 ---
 
-## Roadmap (Next Steps)
-* **Observability**: Resolve HTTP/TCP health check failures and implement deep Liveness/Readiness probes based on Redis consumer lag.
-* **CI/CD**: Build GitHub Actions for automated ONNX linting and multi-arch Docker builds.
-* **IaC Migration**: Transition from raw YAML to **Helm Charts** for modular environment management.
-* **Self-Healing**: Implement Horizontal Pod Autoscaler (HPA) to scale inference workers based on stream depth.
+## 4. Known Issues & Troubleshooting
+
+### E2E Test & `hostNetwork` DNS Conflict
+
+**The Issue:** To inject traffic into the host interface, the Pod must use the host network namespace. This causes it to inherit the host's DNS settings (e.g., Fedora's `systemd-resolved`), which often fails to resolve internal K8s addresses like `nids-db.default.svc.cluster.local`.
+
+---
+
+## 5. Engineering Reflections (Technical Decisions)
+
+Building this N-IDS required several architectural trade-offs to balance low-latency analysis with cloud-native reliability:
+
+* **Reliable Persistence**: A high-performance consumer using Redis Consumer Groups. It implements XAutoClaim to detect and recover "stalled" messages. If a Sinker instance fails during a database write, other instances automatically claim the pending alerts to ensure 100% persistence reliability.
+* **ONNX for Inference**: By exporting Python models to ONNX allows workers to handle high packet-per-second (PPS) loads on standard CPU nodes without requiring GPU acceleration.
+* **Host Networking Challenges**: Utilizing `hostNetwork: true` was necessary for raw packet capture via `libpcap`, but it bypassed internal Kubernetes DNS. Solving this via `ClusterFirstWithHostNet` and manual `dnsConfig` demonstrated the complexities of hybrid networking in Linux environments.
+
+
+## 6. Future Roadmap & Hardening
+
+The current architecture is a functional distributed alpha. Future development is focused on making this into a production-grade piepline and observability:
+
+### High-Performance Networking & Kernel Optimization
+* **XDP/eBPF Ingestion**: Transition the Sniffer from standard `libpcap` to **eBPF (XDP)**. By processing packets directly in the NIC driver space, we can drop or redirect traffic before it even hits the heavy Linux networking stack, significantly reducing CPU overhead.
+* **io_uring for Async I/O**: Implement `io_uring` in the Go Sinker and Sniffer to handle disk and socket I/O. This reduces expensive system calls and context switching when streaming massive amounts of feature data to Redis or TimescaleDB.
+
+### Observability & Resilience
+* **Metric-Based Probes**: Transition from basic process checks to custom Liveness/Readiness probes that monitor Redis consumer lag and stream depth.
+* **Horizontal Pod Autoscaling (HPA)**: Implement HPA to dynamically scale the SVM and KitNet worker pools based on real-time traffic volume in the Redis Broker.
+
+### CI/CD & Security
+* **Automated ML-Ops**: Build GitHub Actions for automated ONNX model linting and multi-architecture (AMD64/ARM64) Docker builds.
+* **Principle of Least Privilege**: Refine the Sniffer's security context by moving from `privileged: true` to granular Linux Capabilities (`CAP_NET_RAW`, `CAP_IPC_LOCK`).
+* **Service Mesh Integration**: Explore mTLS encryption (via Istio or Linkerd) for secure data-in-transit between the Sinker and the TimescaleDB instance.
+
+## 7. Maintenance
+* **Logs**: `make logs-app` for unified streaming of all service logs.
+* **Cleanup**: `make helm-clean` to remove the release and associated PVCs.
+* **Artifacts**: `make clean-artifacts` to remove downloaded datasets and trained models.
