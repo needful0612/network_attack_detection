@@ -4,16 +4,27 @@ PROJECT_NAME := nids
 
 DOCKER_COMPOSE := docker compose -f $(COMPOSE_FILE) -p $(PROJECT_NAME) --project-directory $(PROJECT_DIR)
 
-REGISTRY := localhost:5001
+REGISTRY_PUSH := localhost:5001
+REGISTRY_PULL := kind-registry:5000
 REPO     := nids
 
 PROJECT_ROOT := $(shell pwd)
 
-.PHONY: clean-artifacts up build_up down logs restart ps cluster-up cluster-down build-all push-all build-main build-sinker build-grafana
+HELM_RELEASE := nids
+CHART_DIR    := ./charts/nids
+NAMESPACE    := default
 
-clean-artifacts:
-	rm -rf data
-	rm -rf models
+.PHONY: up build_up logs down restart ps \
+        cluster-up cluster-down clear-network \
+        clean-infra clean-pvc clean-all clean-artifacts \
+        rollout deploy-db deploy-infra deploy-app train \
+        status-all status watch logs-app logs-trainer check-models debug \
+        simulate-attack run-deployment \
+        build-and-push-all build-all push-all \
+        build-main build-sinker build-grafana \
+		e2e-test \
+		helm-install helm-run-deployment helm-clean helm-run-trainer helm-simulate-attack \
+		helm-watch helm-logs
 
 # --- Docker Compose (Local Dev) ---
 up:
@@ -51,7 +62,7 @@ clean-infra:
 
 clean-pvc:
 	kubectl delete pvc timescale-pvc
-
+	
 clean-all: clean-infra
 	kubectl delete -f k8s/prometheus.yaml
 	kubectl delete -f k8s/sinker.yaml
@@ -59,24 +70,33 @@ clean-all: clean-infra
 	kubectl delete -f k8s/kitnet-worker.yaml
 	kubectl delete -f k8s/sniffer.yaml
 
+clean-artifacts:
+	sudo rm -rf data
+	sudo rm -rf models
+
+# Usage: make rollout name=sniffer
+rollout:
+	kubectl rollout restart deployment $(name)
+	kubectl rollout status deployment $(name)
+
 # --- Build & Push ---
 build-and-push-all: build-all push-all
 
 build-all: build-main build-sinker build-grafana
 
 push-all:
-	docker push $(REGISTRY)/$(REPO)-main:latest
-	docker push $(REGISTRY)/$(REPO)-sinker:latest
-	docker push $(REGISTRY)/$(REPO)-grafana:latest
+	docker push $(REGISTRY_PUSH)/$(REPO)-main:latest
+	docker push $(REGISTRY_PUSH)/$(REPO)-sinker:latest
+	docker push $(REGISTRY_PUSH)/$(REPO)-grafana:latest
 
 build-main:
-	docker build -t $(REGISTRY)/$(REPO)-main:latest -f docker/Dockerfile .
+	docker build -t $(REGISTRY_PUSH)/$(REPO)-main:latest -f docker/Dockerfile .
 
 build-sinker:
-	docker build -t $(REGISTRY)/$(REPO)-sinker:latest -f docker/Dockerfile.sinker .
+	docker build -t $(REGISTRY_PUSH)/$(REPO)-sinker:latest -f docker/Dockerfile.sinker .
 
 build-grafana:
-	docker build -t $(REGISTRY)/$(REPO)-grafana:latest -f docker/Dockerfile.grafana .
+	docker build -t $(REGISTRY_PUSH)/$(REPO)-grafana:latest -f docker/Dockerfile.grafana .
 # --- Deployment Logic ---
 deploy-db:
 	-kubectl delete configmap db-init-script 2>/dev/null || true
@@ -155,3 +175,62 @@ run-deployment: cluster-up build-and-push-all
 	
 	@echo ">>> Deploying Application..."
 	$(MAKE) deploy-app
+
+generate-protos:
+	docker run --rm -v $(PWD):/workspace -w /workspace python:3.11-slim sh -c "\
+		apt-get update && apt-get install -y protobuf-compiler && \
+		pip install mypy-protobuf && \
+		protoc -I./protos \
+		--python_out=./scripts/DTO \
+		--mypy_out=./scripts/DTO \
+		./protos/packet.proto && \
+		chown $(shell id -u):$(shell id -g) ./scripts/DTO/packet_pb2.py* "
+
+e2e-test:
+	@echo ">>> Cleaning up previous E2E jobs..."
+	-kubectl delete job nids-e2e-test 2>/dev/null || true
+	@echo ">>> Deploying E2E Integration Tester..."
+	cat k8s/e2e-tester.yaml | sed 's|$${PROJECT_ROOT}|$(PROJECT_ROOT)|g' | kubectl apply -f -
+	@echo ">>> Waiting for E2E test to complete (timeout 60s)..."
+	@kubectl wait --for=condition=complete job/nids-e2e-test --timeout=60s || (echo "E2E Test Failed or Timed Out" && kubectl logs job/nids-e2e-test && exit 1)
+	@echo ">>> E2E Test Passed"
+
+# --- helm section ---
+helm-install:
+	@echo ">>> Installing NIDS via Helm..."
+	helm upgrade --install $(HELM_RELEASE) $(CHART_DIR) \
+		--namespace $(NAMESPACE) \
+		--set global.projectRoot=$(PROJECT_ROOT) \
+		--set global.registry=$(REGISTRY_PULL) \
+		--set-file database.initSqlContent=$(PROJECT_ROOT)/postgres/init.sql \
+		--atomic --timeout 10m
+
+helm-run-deployment: cluster-up build-and-push-all helm-install
+	@echo ">>> NIDS is live. Check status with 'make status'"
+
+# --- Clean up ---
+helm-clean:
+	helm uninstall $(HELM_RELEASE) || true
+	kubectl delete pvc --all || true
+
+# --- Logic Overrides ---
+helm-run-trainer:
+	helm upgrade --install $(HELM_RELEASE) $(CHART_DIR) \
+		--set trainer.enabled=true \
+		--set global.projectRoot=$(PROJECT_ROOT)
+
+helm-simulate-attack:
+	kubectl delete job traffic-generator --ignore-not-found=true
+	# You can still use the old YAML if you haven't templated it yet,
+	# but eventually, this should be: helm test nids
+	cat k8s/traffic-generator.yaml | sed 's|$${PROJECT_ROOT}|$(PROJECT_ROOT)|g' | kubectl apply -f -
+
+helm-watch:
+	watch "kubectl get all -l app.kubernetes.io/instance=$(HELM_RELEASE)"
+
+helm-logs:
+	kubectl logs -l 'app.kubernetes.io/instance=$(HELM_RELEASE)' --all-containers=true -f --tail=50
+
+# in values turn e2e enabled to true for this to work
+helm-e2e-test:
+	helm test $(HELM_RELEASE) --logs

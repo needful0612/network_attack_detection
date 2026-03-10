@@ -7,13 +7,50 @@ import json
 from prometheus_client import start_http_server, Summary, Counter
 
 from scripts.kitnet.kitnet_engine import KitNetWorker 
-from scripts.DTO.object.PacketInfo import PacketInfo
+# from scripts.DTO.object.PacketInfo import PacketInfo
+from scripts.DTO import packet_pb2
 from scripts.alert.alert import cal_weighted_sum
 
 INFERENCE_TIME = Summary('nids_kitnet_inference_seconds', 'Time spent on kitnet inference')
 PACKETS_PROCESSED = Counter('nids_kitnet_packets_total', 'Total packets processed by kitnet')
 
-R = redis.Redis(host='broker', port=6379, decode_responses=True)
+redis_env = os.getenv("REDIS_ADDR", "broker:6379")
+
+if ":" in redis_env:
+    redis_host, redis_port = redis_env.split(":", 1)
+    redis_port = int(redis_port)
+else:
+    redis_host = redis_env
+    redis_port = 6379
+
+print(f"[*] Connecting to Redis at: {redis_host}:{redis_port}")
+
+R = None
+retry_count = 0
+while True:
+    try:
+        socket.gethostbyname(redis_host)
+        
+        temp_r = redis.Redis(
+            host=redis_host, 
+            port=redis_port, 
+            decode_responses=False,
+            socket_connect_timeout=5
+        )
+        
+        temp_r.ping() 
+        
+        R = temp_r
+        print(f"[+] Successfully connected to Redis at {redis_host}")
+        break
+    except (socket.gaierror, redis.exceptions.ConnectionError, redis.exceptions.TimeoutError) as e:
+        retry_count += 1
+        print(f"[!] Redis at {redis_host} not ready. Retry #{retry_count} in 5s... ({e})")
+        time.sleep(5)
+# --------------------------------
+
+# R = redis.Redis(host='broker', port=6379, decode_responses=False)
+PacketInfo = packet_pb2.PacketInfo
 
 base_name = os.getenv("HOSTNAME") or socket.gethostname()
 worker_name = f"{base_name}_{str(uuid.uuid4())[:4]}"
@@ -32,7 +69,7 @@ print(f"Prometheus metrics ON KITNET available on port {PORT}")
 print(f"[*] {worker_name} is live. Waiting for packets...")
 
 while True:
-    messages = R.xreadgroup("group_kitnet", worker_name, {"nids_stream": ">"}, count=1, block=5000)
+    messages = R.xreadgroup(b"group_kitnet", worker_name.encode(), {b"nids_stream": b">"}, count=1, block=5000)
     
     if not messages:
         continue
@@ -41,26 +78,32 @@ while True:
         for msg_id, payload in msg_list:
             
             with INFERENCE_TIME.time():
-                packet = PacketInfo.from_redis(payload['data'])
+                packet = PacketInfo()
+                packet.ParseFromString(payload[b'data'])
                 
-                rmse_score = kit_engine.process_features(packet.features)
+                rmse_score = kit_engine.process_features(list(packet.features))
+            
             PACKETS_PROCESSED.inc()
             
+            pkt_key = f"pkt:{packet.task_id}"
             pipe = R.pipeline()
-            pipe.hset(f"pkt:{packet.task_id}", "kitnet_score", float(rmse_score))
-            pipe.hincrby(f"pkt:{packet.task_id}", "status", 1)
-            pipe.expire(f"pkt:{packet.task_id}", 60)
+            pipe.hset(pkt_key, "kitnet_score", float(rmse_score))
+            pipe.hset(pkt_key, "src_ip", packet.src_ip)
+            pipe.hincrby(pkt_key, "status", 1)
+            pipe.expire(pkt_key, 60)
             results = pipe.execute()
 
-            new_status = results[-2]
-            if new_status == 2:
-                full_record = R.hgetall(f"pkt:{packet.task_id}")
+            current_votes = results[2]
+            if current_votes == 2:
+                full_record_raw = R.hgetall(f"pkt:{packet.task_id}")
+
+                full_record = {k.decode(): v.decode() for k, v in full_record_raw.items()}
+
                 res = cal_weighted_sum(full_record)
                 
-                if res != None:
-                    # print(f"!!! ATTACK DETECTED !!! Score: {res["score"]:.4f} | IP: {res['ip']}")
+                if res is not None:
                     R.xadd("alerts_stream", {"data": json.dumps(res)})
                     
-                R.delete(f"pkt:{packet.task_id}")
+                R.delete(pkt_key)
             
-            R.xack("nids_stream", "Group_KitNET", msg_id)
+            R.xack(b"nids_stream", b"group_kitnet", msg_id)
