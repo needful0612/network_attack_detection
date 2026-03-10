@@ -1,0 +1,46 @@
+{{- range $name, $config := .Values.workers }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-worker
+  labels:
+    app: {{ $name }}-worker
+spec:
+  replicas: {{ $config.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ $name }}-worker
+    template:
+      metadata:
+        labels:
+          app: {{ $name }}-worker
+      spec:
+        initContainers:
+        - name: wait-for-models
+          image: busybox
+          command: ['sh', '-c', 'until [ -f /app/models/{{ $config.waitFile }} ]; do echo waiting for trainer; sleep 2; done;']
+          volumeMounts:
+          - name: model-storage
+          mountPath: /app/models
+      containers:
+      - name: {{ $name }}-worker
+        image: {{ $.Values.global.registry }}/nids-main:latest
+        command: 
+        {{- toYaml $config.command | nindent 8 }}
+        env:
+        - name: MODEL_DIR
+          value: "/app/models"
+        - name: REDIS_ADDR
+          value: "broker:6379"
+        - name: PYTHONPATH
+          value: "/app"
+        volumeMounts:
+        - name: model-storage
+          mountPath: /app/models
+      volumes:
+      - name: model-storage
+        hostPath:
+          path: {{ .Values.global.projectRoot }}/models
+          type: Directory
+---
+{{- end }}
