@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nids.fullname" . }}-sniffer
+  labels:
+    {{- include "nids.labels" . | nindent 4 }}
+spec:
+  replicas: 1 # multiple sniffers on hostNetwork = port/socket collisions => keep 1
+  selector:
+    matchLabels:
+      app: sniffer
+  template:
+    metadata:
+      labels:
+        app: sniffer
+    spec:
+      # Used hostnetwork here to isolate from in cluster heartbeat traffic
+      hostNetwork: true 
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+      - name: sniffer
+        image: {{ $.Values.global.registry }}/nids-main:latest
+        imagePullPolicy: Always
+        command: ["/bin/sh", "-c"]
+        args: 
+          - |
+            if ! ip link show {{ .Values.sniffer.interface }} > /dev/null 2>&1; then
+                echo "{{ .Values.sniffer.interface }} not found. Creating dummy for simulation..."
+                ip link add {{ .Values.sniffer.interface }} type dummy || true
+                ip link set {{ .Values.sniffer.interface }} up || true
+                ip link set {{ .Values.sniffer.interface }} promisc on || true
+            else
+                echo "Interface {{ .Values.sniffer.interface }} found. Setting promisc..."
+                ip link set {{ .Values.sniffer.interface }} up || true
+                ip link set {{ .Values.sniffer.interface }} promisc on || true
+            fi
+            python -m scripts.sniffer.sniffer
+        securityContext:
+          privileged: true
+          capabilities:
+            add: ["NET_ADMIN", "NET_RAW"]
+        env:
+        - name: REDIS_HOST
+          # Use the service name. If on hostNetwork, FQDN(Fully Qualified Domain Name) is safer.
+          value: "broker.{{ .Release.Namespace }}.svc.cluster.local"
+        - name: SNIFFER_IFACE
+          value: {{ .Values.sniffer.interface | quote }}
+        - name: PYTHONPATH
+          value: "/app"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        volumeMounts:
+        - name: scripts-storage
+          mountPath: /app/scripts
+      volumes:
+      - name: scripts-storage
+        hostPath:
+          path: {{ $.Values.global.projectRoot }}/scripts
+          type: Directory

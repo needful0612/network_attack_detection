@@ -9,6 +9,10 @@ REPO     := nids
 
 PROJECT_ROOT := $(shell pwd)
 
+HELM_RELEASE := nids
+CHART_DIR    := ./charts/nids
+NAMESPACE    := default
+
 .PHONY: up build_up logs down restart ps \
         cluster-up cluster-down clear-network \
         clean-infra clean-pvc clean-all clean-artifacts \
@@ -17,7 +21,9 @@ PROJECT_ROOT := $(shell pwd)
         simulate-attack run-deployment \
         build-and-push-all build-all push-all \
         build-main build-sinker build-grafana \
-		e2e-test
+		e2e-test \
+		helm-install run-helm-deployment helm-clean helm-run-trainer helm-simulate-attack \
+		helm-watch helm-logs
 
 # --- Docker Compose (Local Dev) ---
 up:
@@ -187,3 +193,39 @@ e2e-test:
 	@echo ">>> Waiting for E2E test to complete (timeout 60s)..."
 	@kubectl wait --for=condition=complete job/nids-e2e-test --timeout=60s || (echo "E2E Test Failed or Timed Out" && kubectl logs job/nids-e2e-test && exit 1)
 	@echo ">>> E2E Test Passed"
+
+# --- helm section ---
+helm-install:
+	@echo ">>> Installing NIDS via Helm..."
+	helm upgrade --install $(HELM_RELEASE) $(CHART_DIR) \
+		--namespace $(NAMESPACE) \
+		--set global.projectRoot=$(PROJECT_ROOT) \
+		--set global.registry=$(REGISTRY) \
+		--set-file database.initSqlContent=$(PROJECT_ROOT)/postgres/init.sql \
+		--atomic --timeout 10m
+
+run-helm-deployment: cluster-up build-and-push-all helm-install
+	@echo ">>> NIDS is live. Check status with 'make status'"
+
+# --- Clean up ---
+helm-clean:
+	helm uninstall $(HELM_RELEASE) || true
+	kubectl delete pvc --all || true
+
+# --- Logic Overrides ---
+helm-run-trainer:
+	helm upgrade --install $(HELM_RELEASE) $(CHART_DIR) \
+		--set trainer.enabled=true \
+		--set global.projectRoot=$(PROJECT_ROOT)
+
+helm-simulate-attack:
+	kubectl delete job traffic-generator --ignore-not-found=true
+	# You can still use the old YAML if you haven't templated it yet,
+	# but eventually, this should be: helm test nids
+	cat k8s/traffic-generator.yaml | sed 's|$${PROJECT_ROOT}|$(PROJECT_ROOT)|g' | kubectl apply -f -
+
+helm-watch:
+	watch "kubectl get all -l app.kubernetes.io/instance=$(HELM_RELEASE)"
+
+helm-logs:
+	kubectl logs -l 'app.kubernetes.io/instance=$(HELM_RELEASE)' --all-containers=true -f --tail=50

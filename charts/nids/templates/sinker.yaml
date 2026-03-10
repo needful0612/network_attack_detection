@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sinker
+  labels:
+    {{- include "nids.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sinker
+  template:
+    metadata:
+      labels:
+        app: sinker
+    spec:
+      containers:
+      - name: sinker
+        image: {{ $.Values.global.registry }}/nids-sinker:latest
+        env:
+        - name: REDIS_ADDR
+          value: "broker:{{ .Values.redis.port }}"
+        - name: DB_URL
+          value: {{ printf "postgres://postgres:%s@db:5432/%s?sslmode=disable" .Values.database.password .Values.database.dbName | quote }}
+        resources:
+          {{- toYaml .Values.sinker.resources | nindent 10 }}

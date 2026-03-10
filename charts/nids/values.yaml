@@ -22,6 +22,19 @@ redis:
       cpu: 200m
       memory: 128Mi
 
+sniffer:
+  interface: "eth1"
+  mode: "deployment"
+
+sinker:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
 trainer:
   image: "kind-registry:5000/nids-main:latest"
   enabled: true

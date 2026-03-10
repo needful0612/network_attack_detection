@@ -11,7 +11,7 @@ spec:
       restartPolicy: Never
       containers:
       - name: e2e-tester
-        image: {{ .Values.global.registry }}/nids-main:latest
+        image: {{ $.Values.global.registry }}/nids-main:latest
         imagePullPolicy: Always
         securityContext:
           privileged: true
@@ -50,14 +50,14 @@ spec:
       volumes:
       - name: pcap-data
         hostPath:
-          path: {{ .Values.global.projectRoot }}/data
+          path: {{ $.Values.global.projectRoot }}/data
           type: Directory
       - name: scripts-storage
         hostPath:
-          path: {{ .Values.global.projectRoot }}/scripts
+          path: {{ $.Values.global.projectRoot }}/scripts
           type: Directory
       - name: pytester-storage
         hostPath:
-          path: {{ .Values.global.projectRoot }}/pytester
+          path: {{ $.Values.global.projectRoot }}/pytester
           type: Directory
 {{- end }}
