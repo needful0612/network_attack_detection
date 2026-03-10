@@ -1,4 +1,4 @@
-# N-IDS: Distributed Network Intrusion Detection System
+# NIDS: Distributed Network Intrusion Detection System
 
 A microservices-based pipeline for real-time network traffic analysis, feature extraction, and multi-model threat classification. Built for Kubernetes using Go, Python (ONNX), and Redis Streams.
 
