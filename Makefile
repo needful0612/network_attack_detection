@@ -4,7 +4,8 @@ PROJECT_NAME := nids
 
 DOCKER_COMPOSE := docker compose -f $(COMPOSE_FILE) -p $(PROJECT_NAME) --project-directory $(PROJECT_DIR)
 
-REGISTRY := localhost:5001
+REGISTRY_PUSH := localhost:5001
+REGISTRY_PULL := kind-registry:5000
 REPO     := nids
 
 PROJECT_ROOT := $(shell pwd)
@@ -22,7 +23,7 @@ NAMESPACE    := default
         build-and-push-all build-all push-all \
         build-main build-sinker build-grafana \
 		e2e-test \
-		helm-install run-helm-deployment helm-clean helm-run-trainer helm-simulate-attack \
+		helm-install helm-run-deployment helm-clean helm-run-trainer helm-simulate-attack \
 		helm-watch helm-logs
 
 # --- Docker Compose (Local Dev) ---
@@ -84,18 +85,18 @@ build-and-push-all: build-all push-all
 build-all: build-main build-sinker build-grafana
 
 push-all:
-	docker push $(REGISTRY)/$(REPO)-main:latest
-	docker push $(REGISTRY)/$(REPO)-sinker:latest
-	docker push $(REGISTRY)/$(REPO)-grafana:latest
+	docker push $(REGISTRY_PUSH)/$(REPO)-main:latest
+	docker push $(REGISTRY_PUSH)/$(REPO)-sinker:latest
+	docker push $(REGISTRY_PUSH)/$(REPO)-grafana:latest
 
 build-main:
-	docker build -t $(REGISTRY)/$(REPO)-main:latest -f docker/Dockerfile .
+	docker build -t $(REGISTRY_PUSH)/$(REPO)-main:latest -f docker/Dockerfile .
 
 build-sinker:
-	docker build -t $(REGISTRY)/$(REPO)-sinker:latest -f docker/Dockerfile.sinker .
+	docker build -t $(REGISTRY_PUSH)/$(REPO)-sinker:latest -f docker/Dockerfile.sinker .
 
 build-grafana:
-	docker build -t $(REGISTRY)/$(REPO)-grafana:latest -f docker/Dockerfile.grafana .
+	docker build -t $(REGISTRY_PUSH)/$(REPO)-grafana:latest -f docker/Dockerfile.grafana .
 # --- Deployment Logic ---
 deploy-db:
 	-kubectl delete configmap db-init-script 2>/dev/null || true
@@ -200,11 +201,11 @@ helm-install:
 	helm upgrade --install $(HELM_RELEASE) $(CHART_DIR) \
 		--namespace $(NAMESPACE) \
 		--set global.projectRoot=$(PROJECT_ROOT) \
-		--set global.registry=$(REGISTRY) \
+		--set global.registry=$(REGISTRY_PULL) \
 		--set-file database.initSqlContent=$(PROJECT_ROOT)/postgres/init.sql \
 		--atomic --timeout 10m
 
-run-helm-deployment: cluster-up build-and-push-all helm-install
+helm-run-deployment: cluster-up build-and-push-all helm-install
 	@echo ">>> NIDS is live. Check status with 'make status'"
 
 # --- Clean up ---
@@ -229,3 +230,7 @@ helm-watch:
 
 helm-logs:
 	kubectl logs -l 'app.kubernetes.io/instance=$(HELM_RELEASE)' --all-containers=true -f --tail=50
+
+# in values turn e2e enabled to true for this to work
+helm-e2e-test:
+	helm test $(HELM_RELEASE) --logs

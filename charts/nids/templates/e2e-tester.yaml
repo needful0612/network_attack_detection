@@ -3,6 +3,9 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ .Release.Name }}-e2e-test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   template:
     spec:
@@ -17,9 +20,9 @@ spec:
           privileged: true
         env:
         - name: REDIS_ADDR
-          value: "{{ .Release.Name }}-broker:6379"
+          value: {{ printf "%s-broker.%s.svc.cluster.local:%d" .Release.Name .Release.Namespace (int .Values.redis.port) | quote }}
         - name: DB_URL
-          value: "postgres://postgres:{{ .Values.database.password }}@{{ .Release.Name }}-db:5432/{{ .Values.database.dbName }}?sslmode=disable"
+          value: {{ printf "postgres://postgres:%s@%s-db.%s.svc.cluster.local:5432/%s?sslmode=disable" .Values.database.password .Release.Name .Release.Namespace .Values.database.dbName | quote }}
         - name: PYTHONPATH
           value: "/app"
         command: ["/bin/bash", "-c"]
@@ -32,7 +35,7 @@ spec:
             fi
             
             echo "[*] Injecting Mirai attack traffic..."
-            tcpreplay --intf1=eth1 --pps=1000 /data/Mirai_pcap.pcap &
+            tcpreplay -q --intf1=eth1 --pps=5000 /data/Mirai_pcap.pcap &
             
             echo "[*] Waiting for pipeline processing..."
             sleep 15

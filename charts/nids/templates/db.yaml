@@ -55,7 +55,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: db
+  name: {{ .Release.Name }}-db
 spec:
   selector:
     app: {{ .Release.Name }}-db

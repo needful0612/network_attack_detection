@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"strings"
 	"syscall"
 	"time"
 
@@ -26,21 +27,11 @@ func main() {
 	consumerName, _ := os.Hostname()
 	log.Printf("Starting Sinker - Consumer: %s", consumerName)
 
-	database := db.GetDBConnection()
-	if database == nil {
-		log.Fatal("CRITICAL: Failed to initialize database connection. Check DB_URL.")
-	}
-	defer database.Close()
-
-	rdb := redis.NewClient(&redis.Options{
-		Addr: os.Getenv("REDIS_ADDR"),
-	})
-
-	ctx, exit := context.WithCancel(context.Background())
-	defer exit()
-
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	
+	ctx, exit := context.WithCancel(context.Background())
+	defer exit()
 
 	go func() {
 		sig := <-sigChan
@@ -48,12 +39,57 @@ func main() {
 		exit()
 	}()
 
-	err := rdb.XGroupCreateMkStream(ctx, stream, group, "0").Err()
-	if err != nil {
-		if err.Error() != "BUSYGROUP Consumer Group name already exists" {
-			log.Printf("Warning creating consumer group: %v", err)
-		}
-	}
+	var database *sql.DB
+    for {
+        database = db.GetDBConnection()
+        if database != nil {
+            err := database.Ping()
+            if err == nil {
+                log.Printf("[+] Successfully connected to Database: %s", os.Getenv("DB_URL"))
+                break
+            }
+            log.Printf("[!] Database reachable but Ping failed: %v. Retrying...", err)
+        } else {
+            log.Printf("[!] Failed to initialize DB driver. Retrying...")
+        }
+
+        select {
+        case <-ctx.Done():
+            return
+        case <-time.After(5 * time.Second):
+            // Continue retry loop
+        }
+    }
+    defer database.Close()
+
+	rdb := redis.NewClient(&redis.Options{
+		Addr: os.Getenv("REDIS_ADDR"),
+	})
+
+	for {
+        err := rdb.XGroupCreateMkStream(ctx, stream, group, "0").Err()
+        if err == nil {
+            log.Printf("[+] Consumer group '%s' created on stream '%s'", group, stream)
+            break
+        }
+
+        if strings.Contains(err.Error(), "BUSYGROUP") {
+            log.Printf("[*] Consumer group already exists, skipping creation.")
+            break
+        }
+
+        log.Printf("[!] Redis/Stream not ready: %v. Retrying in 5s...", err)
+        
+        timer := time.NewTimer(5 * time.Second)
+        select {
+        case <-ctx.Done():
+            timer.Stop()
+            return
+        case <-timer.C:
+            // continue
+        }
+        timer.Stop()
+    }
 
 	msgChan := make(chan redis.XMessage, maxWorkers)
 	var wg sync.WaitGroup

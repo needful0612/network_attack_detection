@@ -66,4 +66,4 @@ redisExporter:
   port: 9121
 
 e2e:
-  enabled: false
+  enabled: true

@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "nids.fullname" . }}-sniffer
+  name: {{ .Release.Name }}-sniffer
   labels:
     {{- include "nids.labels" . | nindent 4 }}
 spec:
@@ -42,7 +42,7 @@ spec:
         env:
         - name: REDIS_HOST
           # Use the service name. If on hostNetwork, FQDN(Fully Qualified Domain Name) is safer.
-          value: "broker.{{ .Release.Namespace }}.svc.cluster.local"
+          value: "{{ .Release.Name }}-broker.{{ .Release.Namespace }}.svc.cluster.local"
         - name: SNIFFER_IFACE
           value: {{ .Values.sniffer.interface | quote }}
         - name: PYTHONPATH

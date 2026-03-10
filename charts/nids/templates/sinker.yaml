@@ -19,8 +19,8 @@ spec:
         image: {{ $.Values.global.registry }}/nids-sinker:latest
         env:
         - name: REDIS_ADDR
-          value: "broker:{{ .Values.redis.port }}"
+          value: {{ printf "%s-broker:%d" .Release.Name (int .Values.redis.port) | quote }}
         - name: DB_URL
-          value: {{ printf "postgres://postgres:%s@db:5432/%s?sslmode=disable" .Values.database.password .Values.database.dbName | quote }}
+          value: {{ printf "postgres://postgres:%s@%s-db:5432/%s?sslmode=disable" .Values.database.password .Release.Name .Values.database.dbName | quote }}
         resources:
           {{- toYaml .Values.sinker.resources | nindent 10 }}
